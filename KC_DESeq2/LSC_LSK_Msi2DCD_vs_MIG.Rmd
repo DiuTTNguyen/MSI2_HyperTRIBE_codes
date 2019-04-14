@@ -1,0 +1,67 @@
+---
+title: "LSC & LSK: Msi2-DCD vs Msi2-MIG"
+output: html_document
+---
+
+Purpose: We want to know the differentially expressed genes when Msi2 is overexpressed in LSC and LSK.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r library, load data}
+# Load libraries
+library(ggplot2)
+library(dplyr)
+
+# Set working directory
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/LSC_LSK_Msi2-DCD_vs_Msi2-MIG")
+
+# Load data
+lskdcd_vs_lskmig <- read.csv("data/lskdcd_vs_lskmig.csv")
+lscdcd_vs_lscmig <- read.csv("data/lscdcd_vs_lscmig.csv")
+```
+
+Significance: p-adjusted < 0.05
+
+```{r volcano plots}
+# Function to assign significance: whether or not a datapoint is p-adjusted < 0.05
+data.add.significance.values <- function(df) {
+  
+  df <- df[ order( df$padj, decreasing = T ), ]
+  df <- mutate(df, sig=ifelse(df$padj<0.05, "padj<0.05", "Not Sig"))
+  df <- df[ order( df$padj, decreasing = F ), ]
+  
+  return(df)
+}
+
+# Function to plot volcano
+plot_volcano <- function(df, title) {
+  ggplot(data=df, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) +
+    geom_point(alpha=1, size=4) +
+    theme_minimal() +
+    theme(legend.position="none") + # removes color legend
+    xlab("\nlog2(fold change)") + ylab("-log10(p-value)\n") +
+    theme(axis.text=element_text(size=50, color="black"), axis.title=element_text(size=50, color="black")) + 
+    ggtitle(title) +
+    theme(plot.title = element_text(size=30)) + 
+    ylim(c(0,10)) +
+    scale_color_manual( values = c( "padj<0.05"='red3', "Not Sig" ='black' ) ) + 
+    theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), 
+          panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5)) 
+}
+
+title <- "LSK Msi2-DCD vs Msi2-MIG ; p-adj < 0.05\n"
+lskdcd_vs_lskmig <- data.add.significance.values(lskdcd_vs_lskmig)
+pdf( "/Users/chuk/Documents/MSI2-hyperTRIBE/LSC_LSK_Msi2-DCD_vs_Msi2-MIG/figures/LSK_Msi2DCD_vs_Msi2MIG.pdf", 14, 10, useDingbats = F )
+plot_volcano(lskdcd_vs_lskmig, title)
+dev.off()
+
+title <- "LSC Msi2-DCD vs Msi2-MIG ; p-adj < 0.05\n"
+lscdcd_vs_lscmig <- data.add.significance.values(lscdcd_vs_lscmig)
+pdf( "/Users/chuk/Documents/MSI2-hyperTRIBE/LSC_LSK_Msi2-DCD_vs_Msi2-MIG/figures/LSC_Msi2DCD_vs_Msi2MIG.pdf", 14, 10, useDingbats = F )
+plot_volcano(lscdcd_vs_lscmig, title)
+dev.off()
+```
+

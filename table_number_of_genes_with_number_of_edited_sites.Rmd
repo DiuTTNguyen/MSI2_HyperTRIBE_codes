@@ -1,0 +1,110 @@
+---
+title: "Table listing number of genes with a specified number of edited sites in HSCs"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries and load data}
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(data.table)
+library(plotrix)
+library(gridExtra)
+library(grid)
+
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/HSC_number_edited_sites_and_number_of_genes/")
+
+# Load data
+mouse_LT_fpkmAtLeast5_freqAtLeast0.1_genelist <- read.csv("data/mouse_LT_fpkmAtLeast5_freqAtLeast0.1_genelist.csv", header=TRUE)
+mouse_ST_fpkmAtLeast5_freqAtLeast0.1_genelist <- read.csv("data/mouse_ST_fpkmAtLeast5_freqAtLeast0.1_genelist.csv", header=TRUE)
+mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_genelist <- read.csv("data/mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_genelist.csv", header=TRUE)
+mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_genelist <- read.csv("data/mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_genelist.csv", header=TRUE)
+```
+
+
+```{r prepare data}
+# Create a dataframe containing only the gene name and their number of binding sites
+LT <- data.frame(mouse_LT_fpkmAtLeast5_freqAtLeast0.1_genelist$gene.symbol, mouse_LT_fpkmAtLeast5_freqAtLeast0.1_genelist$new.num.edits) 
+colnames(LT) <- c("genelist", "num.edits")
+
+ST <- data.frame(mouse_ST_fpkmAtLeast5_freqAtLeast0.1_genelist$gene.symbol, mouse_ST_fpkmAtLeast5_freqAtLeast0.1_genelist$new.num.edits)
+colnames(ST) <- c("genelist", "num.edits")
+
+mpp2 <- data.frame(mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_genelist$gene.symbol, mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_genelist$new.num.edits)
+colnames(mpp2) <- c("genelist", "num.edits")
+
+mpp4 <- data.frame(mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_genelist$gene.symbol, mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_genelist$new.num.edits)
+colnames(mpp4) <- c("genelist", "num.edits")
+
+# Sum the number of genes with their number of editted sites (ie. In LT-HSC, 625 genes have 1 editted site) and save the info in a dataframe
+LT.count <- as.data.frame(table(unlist(LT$num.edits)))
+colnames(LT.count) <- c("num.edits", "freq")
+ST.count <- as.data.frame(table(unlist(ST$num.edits)))
+colnames(ST.count) <- c("num.edits", "freq")
+mpp2.count <- as.data.frame(table(unlist(mpp2$num.edits)))
+colnames(mpp2.count) <- c("num.edits", "freq")
+mpp4.count <- as.data.frame(table(unlist(mpp4$num.edits)))
+colnames(mpp4.count) <- c("num.edits", "freq")
+
+# Combine dataframes above into a list.
+count.all <- rbind(LT.count, ST.count, mpp2.count, mpp4.count)
+df <- matrix(0, ncol = 4, nrow = 10)
+df <- as.data.frame(df)
+colnames(df) <- c("LT", "ST", "MPP2", "MPP4")
+rownames(df) <- seq(1:10)
+
+# Crude way of filling in values into dataframe
+for (i in LT.count$num.edits) {
+  df [ rownames(df)==i,]$LT <- LT.count [ LT.count$num.edits == i, ]$freq
+}
+
+for (i in ST.count$num.edits) {
+  df [ rownames(df)==i,]$ST <- ST.count [ ST.count$num.edits == i, ]$freq
+}
+
+for (i in mpp2.count$num.edits) {
+  df [ rownames(df)==i,]$MPP2 <- mpp2.count [ mpp2.count$num.edits == i, ]$freq
+}
+
+for (i in mpp4.count$num.edits) {
+  df [ rownames(df)==i,]$MPP4 <- mpp4.count [ mpp4.count$num.edits == i, ]$freq
+}
+```
+
+Create a visual table from dataframe in case grouped barplot too difficult to look at.
+
+```{r table}
+# Add rownames column.
+df.table <- cbind(number.of.editted.sites = rownames(df), df)
+
+# Make visual table.
+grid.table(df.table, rows = NULL) # Table from 1 to 10 edited sites.
+
+# Generate table with 5+ number of editted sites rather than 5 - 10
+lt.sum <- sum(df.table$LT[5:10])
+st.sum <- sum(df.table$ST[5:10])
+mpp2.sum <- sum(df.table$MPP2[5:10])
+mpp4.sum <- sum(df.table$MPP4[5:10])
+
+insert.vector <- c(as.character("5+"), lt.sum, st.sum, mpp2.sum, mpp4.sum)
+trunc.table <- df.table[1:4,]
+trunc.table$number.of.editted.sites <- as.character(trunc.table$number.of.editted.sites)
+trunc.table <- rbind(trunc.table, insert.vector)
+grid.table(trunc.table, rows = NULL)
+
+pdf("/Users/chuk/Documents/MSI2-hyperTRIBE/HSC_number_edited_sites_and_number_of_genes/figures/table_number_of_genes_and_number_of_edited_sites.pdf", 5, 5, useDingbats = F )
+grid.table(trunc.table, rows = NULL)
+dev.off()
+```
+
+
+
+
+
+
+

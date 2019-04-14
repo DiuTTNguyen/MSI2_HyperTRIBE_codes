@@ -1,0 +1,166 @@
+---
+title: "LSK_LSC_heatmap_ReAnalysis"
+author: "Diu Nguyen"
+date: "12/09/2018"
+output: html_document
+---
+
+
+```{r}
+#collapsing the sites of the same gene to gene name for LSC
+lsc_data<-read.csv("mouse_lsc_significant_site_freq_3BR.csv")
+lsc_dataCopy <- lsc_data
+
+lsc_dataCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(lsc_dataCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- lsc_dataCopy[[5]][i]
+  # annotation
+  annotationVal <- lsc_dataCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- lsc_dataCopy[[3]][i]
+  # diff.freq
+  
+  SitesOftheSameGene <- subset(lsc_data, gene.symbol == geneSymbolVal)
+  
+  OrderOfSiteOfSameGene <- SitesOftheSameGene[order(SitesOftheSameGene$MeanFreq, decreasing = TRUE, na.last = TRUE),]
+  topGenePos <- OrderOfSiteOfSameGene[[3]][1]
+  #print("top gene pos")
+  #print(topGenePos)
+  
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+    #print("this is the one")
+    lsc_dataCopy[[16]][i] = 0
+  } else {
+    #print(paste("dedupping", toString(currentRecordPos)))
+    lsc_dataCopy[[16]][i] = 1
+  }
+}
+
+lsc_data_gene <- subset(lsc_dataCopy, lsc_dataCopy$Dedupped_GeneSymbol < 1)
+#print(MouseLSCDedupped)
+write.csv(lsc_data_gene, file = "mouse_lsc_freq_3BR_genelist.csv")
+
+```
+
+```{r}
+#collapsing the sites of the same gene to gene name for LSK
+lsk_data<-read.csv("mouse_lsk_significant_site_freq_3BR.csv")
+lsk_dataCopy <- lsk_data
+
+lsk_dataCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(lsk_dataCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- lsk_dataCopy[[5]][i]
+  # annotation
+  annotationVal <- lsk_dataCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- lsk_dataCopy[[3]][i]
+ 
+  SitesOftheSameGene <- subset(lsk_data, gene.symbol == geneSymbolVal)
+  
+  OrderOfSiteOfSameGene <- SitesOftheSameGene[order(SitesOftheSameGene$MeanFreq, decreasing = TRUE, na.last = TRUE),]
+  topGenePos <- OrderOfSiteOfSameGene[[3]][1]
+ 
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+   
+    lsk_dataCopy[[16]][i] = 0
+  } else {
+    
+    lsk_dataCopy[[16]][i] = 1
+  }
+}
+
+lsk_data_gene <- subset(lsk_dataCopy, lsk_dataCopy$Dedupped_GeneSymbol < 1)
+
+write.csv(lsk_data_gene, file = "mouse_lsk_freq_3BR_genelist.csv")
+
+```
+
+```{r}
+#merging lsk meanfreq>=0.6 and lsc freq_3BR_genelist
+lsk_meanfreq0.6_fpkm5 <- read.csv("mouse_lsk_3BR_genelist_meanfreq0.6_fpkm5.csv", header = TRUE)
+lsc_totalgene <- read.csv("mouse_lsc_freq_3BR_genelist.csv", header = TRUE)
+lsk_matched_lsctotal <- read.csv("mouse_lsk_3BR_genelist_meanfreq0.6_fpkm5_matchedlsc.csv", header = TRUE)
+
+lsk_matched_lsctotal$frq.A.lsc <- lsc_totalgene$frq.A[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$frq.B.lsc <- lsc_totalgene$frq.B[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$freq.C.lsc <- lsc_totalgene$freq.C[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$MeanFreq.lsc <- lsc_totalgene$MeanFreq[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$gene.num.edits.lsc <- lsc_totalgene$gene.num.edits[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$ADA.fpkm.lsc <- lsc_totalgene$ADA.fpkm[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$DCD.fpkm.lsc <- lsc_totalgene$DCD.fpkm[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$MIG.fpkm.lsc <- lsc_totalgene$MIG.fpkm[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+lsk_matched_lsctotal$p.adj.lsc <- lsc_totalgene$p.adj[match( lsk_matched_lsctotal$gene.symbol, lsc_totalgene$gene.symbol)]
+write.csv(lsk_matched_lsctotal, file = "lsk_matched_lsc.csv")
+```
+
+```{r}
+#merging lsc meanfreq>=0.6 and lsk freq_3BR_genelist
+lsc_meanfreq0.6_fpkm5 <- read.csv("mouse_lsc_3BR_genelist_meanfreq0.6_fpkm5.csv", header = TRUE)
+lsk_totalgene <- read.csv("mouse_lsk_freq_3BR_genelist.csv", header = TRUE)
+lsc_matched_lsktotal <- read.csv("mouse_lsc_3BR_genelist_meanfreq0.6_fpkm5_matchedlsk.csv", header = TRUE)
+
+lsc_matched_lsktotal$frq.A.lsk <- lsk_totalgene$frq.A[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$frq.B.lsk <- lsk_totalgene$frq.B[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$freq.C.lsk <- lsk_totalgene$freq.C[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$MeanFreq.lsk <- lsk_totalgene$MeanFreq[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$gene.num.edits.lsk <- lsk_totalgene$gene.num.edits[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$ADA.fpkm.lsk <- lsk_totalgene$ADA.fpkm[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$DCD.fpkm.lsk <- lsk_totalgene$DCD.fpkm[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$MIG.fpkm.lsk <- lsk_totalgene$MIG.fpkm[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+lsc_matched_lsktotal$p.adj.lsk <- lsk_totalgene$p.adj[match( lsc_matched_lsktotal$gene.symbol, lsk_totalgene$gene.symbol)]
+write.csv(lsc_matched_lsktotal, file = "lsc_matched_lsk.csv")
+```
+
+```{r}
+#merging lsk_matched_lsc and lsc_matched_lsk
+lsc_matched <- read.csv("lsc_matched_lsk.csv", header = TRUE)
+lsk_matched <- read.csv("lsk_matched_lsc.csv", header = TRUE)
+merged_lsk_lsc <- merge(lsc_matched, lsk_matched, by = "gene.symbol", all = TRUE)
+write.csv(merged_lsk_lsc, file = "lsc_lsk_0.6freq_5fpkm_merged.csv")
+````
+
+```{r}
+#find fpkm for lsk and lsc unique targets
+lsc_lsk_rearranged <- read.csv("LSCvsLSK_0.6frq_5fpkm_OCS_average_row_dataset.csv", header = TRUE)
+lsk_expression <- read.csv("mouse_lsk_gene_expression.csv", header = TRUE)
+lsc_expression <- read.csv("mouse_lsc_gene_expression.csv", header = TRUE)
+
+lsc_lsk_rearranged$MIG.fpkm.lsk <- lsk_expression$MIG.fpkm[match( lsc_lsk_rearranged$gene.symbol, lsk_expression$gene.symbol)]
+lsc_lsk_rearranged$ADA.fpkm.lsk <- lsk_expression$ADA.fpkm[match( lsc_lsk_rearranged$gene.symbol, lsk_expression$gene.symbol)]
+lsc_lsk_rearranged$DCD.fpkm.lsk <- lsk_expression$DCD.fpkm[match( lsc_lsk_rearranged$gene.symbol, lsk_expression$gene.symbol)]
+lsc_lsk_rearranged$MIG.fpkm.lsc <- lsc_expression$MIG.fpkm[match( lsc_lsk_rearranged$gene.symbol, lsc_expression$gene.symbol)]
+lsc_lsk_rearranged$ADA.fpkm.lsc <- lsc_expression$ADA.fpkm[match( lsc_lsk_rearranged$gene.symbol, lsc_expression$gene.symbol)]
+lsc_lsk_rearranged$DCD.fpkm.lsc <- lsc_expression$DCD.fpkm[match( lsc_lsk_rearranged$gene.symbol, lsc_expression$gene.symbol)]
+write.csv(lsc_lsk_rearranged, file = "lsc_lsk_0.6frq_5fpkm_OCS_matched_fpkm.csv")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

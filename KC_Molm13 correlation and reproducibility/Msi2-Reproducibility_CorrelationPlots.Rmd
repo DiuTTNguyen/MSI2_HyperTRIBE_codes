@@ -1,0 +1,112 @@
+---
+title: "Replicates of Msi2 HyperTRIBE"
+output: html_document
+---
+
+Purpose: To show that Msi2 HyperTRIBE is reproducible by plotting correlation between the 3 HyperTRIBE replicates.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries}
+library(openxlsx)
+library(scatterplot3d)
+library(ggplot2)
+```
+
+Replicate Yuheng's plot.
+
+```{r Yuheng's code}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Msi2ADAR_Supplemental/")
+
+df <- read.xlsx( "data/molm13_snp_counts_dedupped.xlsx" )
+
+rowmask <- ( df$`Sample_Hyper-dADAR_12617_IGO_08269_2.ref.count` + df$`Sample_Hyper-dADAR_12617_IGO_08269_2.alt.count` >= 25 ) &
+( df$`Sample_Hyper-dADAR_121417_IGO_08269_5.ref.count` + df$`Sample_Hyper-dADAR_121417_IGO_08269_5.alt.count` >= 25 ) &
+( df$`Sample_Hyper-dADAR_121817_IGO_08269_8.ref.count` + df$`Sample_Hyper-dADAR_121817_IGO_08269_8.alt.count` >= 25 )
+num.sites <- sum( rowmask )
+filler <- rep( 0, num.sites )
+
+x <- df$`Sample_Hyper-dADAR_12617_IGO_08269_2.alt.count` / ( df$`Sample_Hyper-dADAR_12617_IGO_08269_2.ref.count` + df$`Sample_Hyper-dADAR_12617_IGO_08269_2.alt.count` )
+y <- df$`Sample_Hyper-dADAR_121417_IGO_08269_5.alt.count` / ( df$`Sample_Hyper-dADAR_121417_IGO_08269_5.ref.count` + df$`Sample_Hyper-dADAR_121417_IGO_08269_5.alt.count` )
+z <- df$`Sample_Hyper-dADAR_121817_IGO_08269_8.alt.count` / ( df$`Sample_Hyper-dADAR_121817_IGO_08269_8.ref.count` + df$`Sample_Hyper-dADAR_121817_IGO_08269_8.alt.count` )
+
+cor.xy <- cor( x[ rowmask ], y[ rowmask ] )
+cor.xz <- cor( x[ rowmask ], z[ rowmask ] )
+cor.yz <- cor( y[ rowmask ], z[ rowmask ] )
+sp3d <- scatterplot3d( x[ rowmask ], z[ rowmask ],  y[ rowmask ],  
+                      xlab = "dADAR-1", ylab = "dADAR-3", zlab = "dADAR-2",
+              grid = F,  angle = 45, pch = 3, color = 'lightgrey' )
+sp3d$points3d( filler, z[ rowmask ], y[ rowmask ], pch = 19, col = 'grey60')
+sp3d$points3d( x[ rowmask ], z[ rowmask ], filler, pch = 19, col = 'grey45' )
+sp3d$points3d( x[ rowmask ], filler, y[ rowmask ], pch = 19, col = 'grey30')
+text( sp3d$xyz.convert( .8, 1, .075 ), labels = substitute( paste( r[13], " = ", cor ), list( cor = sprintf( "%.3f", cor.xz ) ) ) )
+text( sp3d$xyz.convert( .55, 0, .875 ), labels = substitute( paste( r[12], " = ", cor ), list( cor = sprintf( "%.3f", cor.xy ) ) ) )
+text( sp3d$xyz.convert( .15, 1, .8 ), labels = substitute( paste( r[23], " = ", cor ), list( cor = sprintf( "%.3f", cor.yz ) ) ) )
+
+```
+
+Convert the 3d plot into 3 separate plots.
+
+```{r separate}
+xy <- data.frame(x[rowmask],y[rowmask]) # Convert to dataframe for plotting.
+ggplot(xy, aes(x.rowmask., y.rowmask.)) + 
+  xlab("Replicate 1") + 
+  ylab("Replicate 2") +
+  geom_point(color="dodgerblue4") + # data plotted as points
+  theme_minimal() + #minimal theme
+  annotate("text", x = 0.85, y = 0.25, label = paste("r[12] ==", round(cor.xy, digits=3)), size=12, parse=TRUE) + #add correlation value
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) + # make axis labels bigger
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+          panel.background = element_blank(), axis.line = element_line(colour = "black", size=1)) # remove top and right plot border line
+
+# x vs. z
+xz <- data.frame(x[rowmask],z[rowmask]) # Convert to dataframe for plotting.
+ggplot(xz, aes(x.rowmask., z.rowmask.)) + 
+  xlab("Replicate 1") + 
+  ylab("Replicate 3") +
+  geom_point(color="dodgerblue4") + # data plotted as points
+  theme_minimal() + #minimal theme
+  annotate("text", x = 0.85, y = 0.25, label = paste("r[13] ==", round(cor.xz, digits=3)), size=12, parse=TRUE) + #add correlation value
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) + # make axis labels bigger
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size=1)) # remove top and right plot border line
+
+# y vs. z
+yz <- data.frame(y[rowmask],z[rowmask]) # Convert to dataframe for plotting.
+ggplot(yz, aes(y.rowmask., z.rowmask.)) + 
+  xlab("Replicate 3") + 
+  ylab("Replicate 2") +
+  geom_point(color="dodgerblue4") + # data plotted as points
+  theme_minimal() + #minimal theme
+  annotate("text", x = 0.85, y = 0.15, label = paste("r[23] ==", round(cor.yz, digits=3)), size=12, parse=TRUE) + #add correlation value
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) + # make axis labels bigger
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+        panel.background = element_blank(), axis.line = element_line(colour = "black", size=1)) # remove top and right plot border line
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

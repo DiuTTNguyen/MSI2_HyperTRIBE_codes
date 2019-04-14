@@ -1,0 +1,155 @@
+---
+title: "Combine Msi2 HyperTRIBE edited site to nearest Msi2 motif in MOLM13 + Msi2 HyperTRIBE edited site in MOLM13 to nearest NB4 iCLIP motif"
+output: html_document
+---
+
+Purpose: Diu wanted to combine both of these probability density functions together.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libraries and load CLIP data}
+library(ggplot2)
+```
+
+Zi-Ning's function to calculate distance.
+
+```{r functions}
+# functions
+CalculateDistance <- function(query.idx, subject.idx, strand) {
+  if(length(query.idx) == 0 || length(subject.idx) == 0 || length(strand) == 0) {
+    return(NA)
+  }
+  if(as.character(strand)=="+"){
+    return(query.idx - subject.idx)
+  } else {
+    return(subject.idx - query.idx)
+  }
+}
+```
+
+
+Load data:
+1) CLIP_genomic_ranges.RData: CLIP(?) data for NB4. Not sure what peaks.signif.gr is.
+2) peaks.data: CLIP peaks of NB4 cells??? (doesn't seem like this data is needed in the plots we want to make)
+3) molm13.edit.df: MOLM13 hypertribe sites
+4) molm13_with_distance: MOLM13 with distance of hypertribe site to nearest Msi2 motif
+
+
+```{r MOLM13 data}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/MOLM13/")
+
+load("data/CLIP_genomic_ranges.RData") #loads the following Granges: k562.signif.gr, molm13.signif.gr, nb4.signif.gr, peaks.signif.gr
+peaks.data <- readRDS("data/peakdata.rds") # peaks.data contains peaks found by CLIPanalyze
+
+# apply filters: ADA.fpkm >=5 and DCD.fpkm>=5 and MIG>=5 and diff.freq>=0.1
+molm13.edit.df <- read.csv("data/molm13_snp_counts_dedupped_significant.csv")
+molm13.filtered.df <- subset(molm13.edit.df, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & diff.frequency >= 0.1)
+# create Genomic Ranges object of MOLM13 data after more stringent filters
+molm13.filtered.df$start <- molm13.filtered.df$pos
+molm13.filtered.df$end <- molm13.filtered.df$pos
+molm13.filtered.gr <- GenomicRanges::makeGRangesFromDataFrame(molm13.filtered.df)
+
+# apply filters: ADA.fpkm >=5 and DCD.fpkm>=5 and MIG>=5 and diff.freq>=0.1
+molm13_with_distance <- read.csv("data/molm13_with_distance.csv")
+molm13_with_distance.ada <- molm13_with_distance [ molm13_with_distance$ADA.fpkm >=5, ]
+molm13_with_distance.dcd <- molm13_with_distance.ada [ molm13_with_distance.ada$DCD.fpkm >=5, ]
+molm13_with_distance.mig <- molm13_with_distance.dcd [ molm13_with_distance.dcd$MIG.fpkm >=5, ]
+molm13_with_distance.allfilters <- molm13_with_distance.mig [ molm13_with_distance.mig$diff.frequency >=0.1,]
+
+saveRDS(molm13_with_distance.allfilters, "data/filtered_distance_to_nearest_motif_molm13_fpkm5_difffreq01_KarenChu.rds")
+```
+
+
+Zi-Ning does the same analysis for unfiltered MOLM13 data and filtered MOLM13 data.
+
+1) Get the indices of MOLM13 hypertribe site to the nearest NB4 CLIP site. (molm13.signif.gr & nb4.signif.gr; molm13.signif.gr is produced from the R code above)
+2) Replace all NA with zero.
+3) Calculate distance from MOLM13 to NB4 site. Parameters seem to be MOLM13 hypertribe site, NB4 start site, and the strand value of MOLM13.
+
+I saved filtered MOLM13 distance and used it to plot probability density function.
+
+
+```{r NB4}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/MOLM13/")
+nb4.hits.df <- read.csv("data/nb4_short_genes.csv")
+
+# get indices of nearest neighbors
+molm13.nb4.nearest <- GenomicRanges::nearest(molm13.signif.gr, nb4.signif.gr)
+molm13.filtered.nb4.nearest <- GenomicRanges::nearest(molm13.filtered.gr, nb4.signif.gr)
+
+# replace all NA values with 0
+molm13.nb4.nearest[is.na(molm13.nb4.nearest)] <- 0
+molm13.filtered.nb4.nearest[is.na(molm13.filtered.nb4.nearest)] <- 0
+
+# get NB4 distances (publicly available datasets)
+molm13.nb4.distance <- mapply(function(q.idx, s.idx, strand) CalculateDistance(q.idx, s.idx, strand),
+                              as.list(molm13.signif.gr@ranges@start),
+                              as.list(nb4.signif.gr[c(molm13.nb4.nearest)]@ranges@start),
+                              as.list(molm13.signif.gr@strand))
+molm13.filtered.nb4.distance <- mapply(function(q.idx, s.idx, strand) CalculateDistance(q.idx, s.idx, strand),
+                              as.list(molm13.filtered.gr@ranges@start),
+                              as.list(nb4.signif.gr[c(molm13.filtered.nb4.nearest)]@ranges@start),
+                              as.list(molm13.filtered.gr@strand))
+
+# create df with all of the distances
+distance.df <- data.frame(chr <- molm13.signif.gr@seqnames,
+                          strand <- molm13.signif.gr@strand,
+                          pos <- molm13.signif.gr@ranges@start,
+                          nb4.dist <- molm13.nb4.distance)
+filtered.distance.df <- data.frame(chr <- molm13.filtered.gr@seqnames,
+                          strand <- molm13.filtered.gr@strand,
+                          pos <- molm13.filtered.gr@ranges@start,
+                          nb4.dist <- molm13.filtered.nb4.distance)
+
+saveRDS(filtered.distance.df, "data/filtered_distance_to_nearest_NB4_clip_site_KarenChu.rds")
+```
+
+
+MOLM13: Used molm13_with_distance.allfilters (created in earlier chunk; data is to nearest Msi2 motif)
+NB4: Used filtered.distance.df, which was produced using nb4.signif.gr (NB4 CLIP data?) & molm13.signif.gr (MOLM13 hypertribe sites)
+
+
+```{r PDF}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/MOLM13/")
+
+# Below is the old NB4 iCLIP data with only top 3000 genes selected. Diu and Zi-Ning do not remember why they filtered for top 3000.
+#nb4 <- readRDS("data/filtered_distance_to_nearest_NB4_clip_site_KarenChu.rds") # from clip_analysis_Zining_code_KCedit.R #Use data above for NB4 with all genes.
+#nb4.dist <- data.frame(x=nb4$nb4.dist, label=rep('NB4', nrow(nb4))) # get distance to nearest motif
+
+# Import MOLM13.
+molm13 <- readRDS("data/filtered_distance_to_nearest_motif_molm13_fpkm5_difffreq01_KarenChu.rds") #generated above
+molm13.dist <- data.frame(x=molm13$dist.to.motif, label=rep('MOLM13', nrow(molm13))) # get distance to nearest motif
+
+# Import NB4 iCLIP data for all genes (not just top 3000)
+nb4.dist <- read.csv("data/nb4_histogram_all_genes.csv")
+nb4.dist$label <- "NB4"
+nb4.dist.final <- data.frame(x=nb4.dist$nb4distance, label=rep('NB4', nrow(nb4.dist)))
+
+df <- rbind(molm13.dist, nb4.dist.final)
+
+pdf("figures/MOLM13_hypertribe_site_to_nearest_MSI2_motif_in_MOLM13_and_to_nearest_NB4_CLIP_site.pdf", 15, 10)
+ggplot(df, aes(x, fill=label)) + 
+  geom_density(color = "black", alpha = 0.7) + 
+  scale_fill_manual(values = c("#56B4E9","#E69F00")) +
+  scale_x_continuous(limits = c(-1000, 1000)) +
+  theme_minimal() +
+  xlab("\nDistance (bp)") + ylab("Density\n") +
+  theme(axis.text=element_text(size=50, color="black"), axis.title=element_text(size=50, color="black")) + # make axis labels bigger
+  ggtitle("MOLM13 hypertribe site to nearest MSI2 motif in MOLM13 and distance to nearest NB4 CLIP site\n") +
+  theme(plot.title = element_text(size=20)) + # add title to plot
+  theme(legend.title=element_text(size=0), 
+        legend.text=element_text(size=35)) +
+  theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), #edit font size of x & y labels
+        panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5)) #get rid of top and right border lines
+dev.off()
+```
+
+
+
+
+
+
+

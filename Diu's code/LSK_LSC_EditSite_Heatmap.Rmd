@@ -1,0 +1,22 @@
+---
+title: "LSK_LSC_EditSite_Heatmap"
+author: "Diu Nguyen"
+date: "1/28/2019"
+output: html_document
+---
+
+```{r}
+#find fpkm for lsk and lsc unique targets
+lsc_lsk_OCS <- read.csv("lsc_lsk_0.6frq_5fpkm_OCS_matched_fpkm.csv", header = TRUE)
+lsk_editsite <- read.csv("LSK_ABC_adjNoEdits_genelist.csv", header = TRUE)
+lsc_editsite <- read.csv("LSC_ABC_adjNoEdits_genelist.csv", header = TRUE)
+lsc_lsk_OCS$num.edit.lskA <- lsk_editsite$num.edits.A[match( lsc_lsk_OCS$gene.symbol, lsk_editsite$gene.symbol)]
+lsc_lsk_OCS$num.edit.lskB <- lsk_editsite$num.edits.B[match( lsc_lsk_OCS$gene.symbol, lsk_editsite$gene.symbol)]
+lsc_lsk_OCS$num.edit.lskC <- lsk_editsite$num.edits.C[match( lsc_lsk_OCS$gene.symbol, lsk_editsite$gene.symbol)]
+
+lsc_lsk_OCS$num.edit.lscA <- lsc_editsite$num.edits.A[match( lsc_lsk_OCS$gene.symbol, lsc_editsite$gene.symbol)]
+lsc_lsk_OCS$num.edit.lscB <- lsc_editsite$num.edits.B[match( lsc_lsk_OCS$gene.symbol, lsc_editsite$gene.symbol)]
+lsc_lsk_OCS$num.edit.lscC <- lsc_editsite$num.edits.C[match( lsc_lsk_OCS$gene.symbol, lsc_editsite$gene.symbol)]
+
+write.csv(lsc_lsk_OCS, file = "lsk_lsc_0.6frq_5fpkm_OCS_fpkm_adjEditSites.csv")
+```

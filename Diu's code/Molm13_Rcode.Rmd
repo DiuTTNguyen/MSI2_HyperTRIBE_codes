@@ -1,0 +1,107 @@
+---
+title: "Molm13_Rcode"
+output: html_document
+---
+
+```{r}
+#filter by fpkm and ADA.frequency
+Molm13 <- read.csv("./molm13_snp_counts_dedupped_significant.csv", header=TRUE)
+
+Molm13Filtered <- subset(Molm13, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & diff.frequency >= 0.1)
+
+write.csv (Molm13Filtered, file = "molm13_snp_fpkmAtLeast5_DiffFreqAtLeast0.1.csv")
+
+```
+
+
+```{r}
+#count number of utr3, utr5 and cds sites
+print (length(which(Molm13Filtered$annotation == "utr3")))
+print (length(which(Molm13Filtered$annotation == "utr5")))
+print (length(which(Molm13Filtered$annotation == "cds")))
+print (dim(Molm13Filtered)[1])
+```
+
+
+```{r}
+#Deduplicate sites of the same gene->generate gene list distinguishing utr3, utr5 and cds
+Molm13FilteredCopy <- Molm13Filtered
+
+Molm13FilteredCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(Molm13FilteredCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Molm13FilteredCopy[[5]][i]
+  # annotation
+  annotationVal <- Molm13FilteredCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- Molm13FilteredCopy[[3]][i]
+  
+  othersWithSameGene <- subset(Molm13Filtered, gene.symbol == geneSymbolVal & annotation == annotationVal)
+  
+  othersWithSame <- othersWithSameGene[order(-othersWithSameGene$diff.frequency),]
+  topGenePos <- othersWithSame[[3]][1]
+  #print("top gene pos")
+  #print(topGenePos)
+  
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+    #print("this is the one")
+    Molm13FilteredCopy[[19]][i] = 0
+  } else {
+    #print(paste("dedupping", toString(currentRecordPos)))
+    Molm13FilteredCopy[[19]][i] = 1
+  }
+}
+
+Molm13Dedupped <- subset(Molm13FilteredCopy, Molm13FilteredCopy$Dedupped_GeneSymbol < 1)
+print(Molm13Dedupped)
+write.csv(Molm13Dedupped, file = "molm13_snp_filtered.csv")
+```
+
+
+
+```{r}
+#Deduplicate sites of the same gene->generate gene list WITHOUT distinguishing utr3, utr5 and cds
+Molm13FilteredCopy <- Molm13Filtered
+
+Molm13FilteredCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(Molm13FilteredCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Molm13FilteredCopy[[5]][i]
+  # annotation
+  annotationVal <- Molm13FilteredCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- Molm13FilteredCopy[[3]][i]
+  
+  othersWithSameGene <- subset(Molm13Filtered, gene.symbol == geneSymbolVal)
+  
+  othersWithSame <- othersWithSameGene[order(-othersWithSameGene$diff.frequency),]
+  topGenePos <- othersWithSame[[3]][1]
+  #print("top gene pos")
+  #print(topGenePos)
+  
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+    #print("this is the one")
+    Molm13FilteredCopy[[19]][i] = 0
+  } else {
+    #print(paste("dedupping", toString(currentRecordPos)))
+    Molm13FilteredCopy[[19]][i] = 1
+  }
+}
+
+Molm13Dedupped <- subset(Molm13FilteredCopy, Molm13FilteredCopy$Dedupped_GeneSymbol < 1)
+print(Molm13Dedupped)
+write.csv(Molm13Dedupped, file = "molm13_snp_filtered_fpkmAtLeast5_DiffFreqAtLeast0.1_dedupped_genelist.csv")
+
+```

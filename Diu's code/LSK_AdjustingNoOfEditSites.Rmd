@@ -1,0 +1,192 @@
+---
+title: "LSK_adjNoEditSite"
+author: "Diu Nguyen"
+date: "1/22/2019"
+output: html_document
+---
+
+```{r}
+#Adjusting No of edit sites after filtering by fpkm >=5 and different frequency >=0.1 
+
+#LSK A
+Mouse_LSK_A <- read.csv("mouse_lsk_significant_site_freq_A.csv", header=TRUE)
+Mouse_LSK_A_Filtered <- subset(Mouse_LSK_A, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & frq.A >= 0.1)
+NumberofRow <- dim(Mouse_LSK_A_Filtered)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_LSK_A_Filtered[[5]][i]
+  othersWithSameGene <- subset(Mouse_LSK_A_Filtered, gene.symbol == geneSymbolVal)
+  Mouse_LSK_A_Filtered$num.edits.A[i] <- nrow(othersWithSameGene)
+}
+write.csv(Mouse_LSK_A_Filtered, file= "mouse_LSK_A_adjNoEdits.csv")
+
+
+#LSK B
+Mouse_LSK_B <- read.csv("mouse_lsk_significant_site_freq_B.csv", header=TRUE)
+Mouse_LSK_B_Filtered <- subset(Mouse_LSK_B, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & frq.B >=0.1)
+NumberofRow <- dim(Mouse_LSK_B_Filtered)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_LSK_B_Filtered[[5]][i]
+  othersWithSameGene <- subset(Mouse_LSK_B_Filtered, gene.symbol == geneSymbolVal)
+  Mouse_LSK_B_Filtered$num.edits.B[i] <- nrow(othersWithSameGene)
+}
+write.csv(Mouse_LSK_B_Filtered, file= "mouse_LSK_B_adjNoEdits.csv")
+
+
+#LSK C
+Mouse_LSK_C <- read.csv("mouse_lsk_significant_site_freq_C.csv", header=TRUE)
+Mouse_LSK_C_Filtered <- subset(Mouse_LSK_C, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & frq.C >=0.1)
+NumberofRow <- dim(Mouse_LSK_C_Filtered)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_LSK_C_Filtered[[5]][i]
+  othersWithSameGene <- subset(Mouse_LSK_C_Filtered, gene.symbol == geneSymbolVal)
+  Mouse_LSK_C_Filtered$num.edits.C[i] <- nrow(othersWithSameGene)
+}
+write.csv(Mouse_LSK_C_Filtered, file= "mouse_LSK_C_adjNoEdits.csv")
+```
+
+```{r}
+
+#collapsing the sites of the same gene to gene name for LSK_A
+lskA_data <- read.csv("mouse_LSK_A_adjNoEdits.csv", header = TRUE)
+lskA_dataCopy <- lskA_data
+
+lskA_dataCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(lskA_dataCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- lskA_dataCopy[[5]][i]
+  # annotation
+  annotationVal <- lskA_dataCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- lskA_dataCopy[[3]][i]
+ 
+  SitesOftheSameGene <- subset(lskA_data, gene.symbol == geneSymbolVal)
+  
+  OrderOfSiteOfSameGene <- SitesOftheSameGene[order(SitesOftheSameGene$frq.A, decreasing = TRUE, na.last = TRUE),]
+  topGenePos <- OrderOfSiteOfSameGene[[3]][1]
+ 
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+   
+    lskA_dataCopy[[14]][i] = 0
+  } else {
+    
+    lskA_dataCopy[[14]][i] = 1
+  }
+}
+
+lskA_data_gene <- subset(lskA_dataCopy, lskA_dataCopy$Dedupped_GeneSymbol < 1)
+
+write.csv(lskA_data_gene, file = "mouse_lskA_genelist_adjNoEdits.csv")
+
+```
+
+```{r}
+
+#collapsing the sites of the same gene to gene name for LSK_B
+lskB_data <- read.csv("mouse_LSK_B_adjNoEdits.csv", header = TRUE)
+lskB_dataCopy <- lskB_data
+
+lskB_dataCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(lskB_dataCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- lskB_dataCopy[[5]][i]
+  # annotation
+  annotationVal <- lskB_dataCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- lskB_dataCopy[[3]][i]
+ 
+  SitesOftheSameGene <- subset(lskB_data, gene.symbol == geneSymbolVal)
+  
+  OrderOfSiteOfSameGene <- SitesOftheSameGene[order(SitesOftheSameGene$frq.B, decreasing = TRUE, na.last = TRUE),]
+  topGenePos <- OrderOfSiteOfSameGene[[3]][1]
+ 
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+   
+    lskB_dataCopy[[14]][i] = 0
+  } else {
+    
+    lskB_dataCopy[[14]][i] = 1
+  }
+}
+
+lskB_data_gene <- subset(lskB_dataCopy, lskB_dataCopy$Dedupped_GeneSymbol < 1)
+
+write.csv(lskB_data_gene, file = "mouse_lskB_genelist_adjNoEdits.csv")
+
+```
+
+```{r}
+
+#collapsing the sites of the same gene to gene name for LSK_C
+lskC_data <- read.csv("mouse_LSK_C_adjNoEdits.csv", header = TRUE)
+lskC_dataCopy <- lskC_data
+
+lskC_dataCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(lskB_dataCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- lskC_dataCopy[[5]][i]
+  # annotation
+  annotationVal <- lskC_dataCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- lskC_dataCopy[[3]][i]
+ 
+  SitesOftheSameGene <- subset(lskC_data, gene.symbol == geneSymbolVal)
+  
+  OrderOfSiteOfSameGene <- SitesOftheSameGene[order(SitesOftheSameGene$frq.C, decreasing = TRUE, na.last = TRUE),]
+  topGenePos <- OrderOfSiteOfSameGene[[3]][1]
+ 
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+   
+    lskC_dataCopy[[14]][i] = 0
+  } else {
+    
+    lskC_dataCopy[[14]][i] = 1
+  }
+}
+
+lskC_data_gene <- subset(lskC_dataCopy, lskC_dataCopy$Dedupped_GeneSymbol < 1)
+
+write.csv(lskC_data_gene, file = "mouse_lskC_genelist_adjNoEdits.csv")
+
+```
+
+```{r}
+#merging lsk A, B and C with adj No of Edit sites
+lsk_genelist <- read.csv("mouse_lsk_fpkmAtLeast5_DiffFreqAtLeast0.1_genelist.csv", header=TRUE)
+lskA_genelist <- read.csv("mouse_lskA_genelist_adjNoEdits.csv", header = TRUE)
+lskB_genelist <- read.csv("mouse_lskB_genelist_adjNoEdits.csv", header = TRUE)
+lskC_genelist <- read.csv("mouse_lskC_genelist_adjNoEdits.csv", header = TRUE)
+
+lsk_genelist$num.edits.A <- lskA_genelist$num.edits.A[match(lsk_genelist$gene.symbol, lskA_genelist$gene.symbol)]
+lsk_genelist$frq.A <- lskA_genelist$frq.A[match(lsk_genelist$gene.symbol, lskA_genelist$gene.symbol)]
+
+lsk_genelist$num.edits.B <- lskB_genelist$num.edits.B[match(lsk_genelist$gene.symbol, lskB_genelist$gene.symbol)]
+lsk_genelist$frq.B <- lskB_genelist$frq.B[match(lsk_genelist$gene.symbol, lskB_genelist$gene.symbol)]
+
+lsk_genelist$num.edits.C <- lskC_genelist$num.edits.C[match(lsk_genelist$gene.symbol, lskC_genelist$gene.symbol)]
+lsk_genelist$frq.C <- lskC_genelist$frq.C[match(lsk_genelist$gene.symbol, lskC_genelist$gene.symbol)]
+
+write.csv(lsk_genelist, file="LSK_ABC_adjNoEdits.csv")
+
+```
+

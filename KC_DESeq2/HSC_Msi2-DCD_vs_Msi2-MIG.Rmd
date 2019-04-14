@@ -1,0 +1,108 @@
+---
+title: "Msi2-DCD vs Msi2-MIG in HSC population"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(ggplot2)
+```
+
+```{r load data}
+# Set working directory
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/HSC_population_Msi2-DCD_vs_Msi2-MIG/")
+
+# Load data
+hsc_ltdcd_vs_ltmig <- read.csv("data/hsc_ltdcd_vs_ltmig.csv")
+hsc_stdcd_vs_stmig <- read.csv("data/hsc_stdcd_vs_stmig.csv")
+hsc_mpp2dcd_vs_mpp2mig <- read.csv("data/hsc_mpp2dcd_vs_mpp2mig.csv")
+hsc_mpp4dcd_vs_mpp4mig <- read.csv("data/hsc_mpp4dcd_vs_mpp4mig.csv")
+```
+
+Significance: adjusted p-adj < 0.05.
+DESeq2 does Benjamini-Hochberg to calculate p-adjusted.
+Remember the y-axis is -log10(pvalue) and a threshold of p-adjusted < 0.05 gives doesn't necessarily give the same threshold for p-values across datasets. For example, in LT, the biggest p-adjusted that is significant is 0.04996464 but the corresponding p-value is 0.01360093. For MPP2, maximum p-adjusted = 0.004616859 but corresponding p-value = 4.228667e-07.
+
+```{r volcano plot for LT and ST}
+# Function to assign significance: whether or not a datapoint is p-adjusted < 0.05
+data.add.significance.values <- function(df) {
+  
+  df <- df[ order( df$padj, decreasing = T ), ]
+  df <- mutate(df, sig=ifelse(df$padj<0.05, "padj<0.05", "Not Sig"))
+  df <- df[ order( df$padj, decreasing = F ), ]
+  
+  return(df)
+}
+
+# Function to plot volcano
+plot_volcano <- function(df, title) {
+  ggplot(data=df, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) +
+    geom_point(alpha=1, size=4) +
+    theme_minimal() +
+    theme(legend.position="none") + # removes color legend
+    xlab("\nlog2(fold change)") + ylab("-log10(p-value)\n") +
+    theme(axis.text=element_text(size=50, color="black"), axis.title=element_text(size=50, color="black")) + 
+    ggtitle(title) +
+    theme(plot.title = element_text(size=40)) + 
+    ylim(c(0,40)) +
+    scale_color_manual( values = c( "padj<0.05"='red3', "Not Sig" ='black' ) ) + 
+    theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), 
+          panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5)) 
+}
+
+#LT
+hsc_ltdcd_vs_ltmig <- data.add.significance.values(hsc_ltdcd_vs_ltmig)
+title <- "LT-HSC: DCD vs MIG ; sig = padj < 0.05\n"
+pdf( "/Users/chuk/Documents/MSI2-hyperTRIBE/HSC_population_Msi2-DCD_vs_Msi2-MIG/figures/LT_Msi2DCD_vs_Msi2MIG.pdf", 14, 10, useDingbats = F )
+plot_volcano(hsc_ltdcd_vs_ltmig, title)
+dev.off()
+
+# ST
+hsc_stdcd_vs_stmig <- data.add.significance.values(hsc_stdcd_vs_stmig)
+title <- "ST-HSC: DCD vs MIG ; sig = padj < 0.05\n"
+pdf( "/Users/chuk/Documents/MSI2-hyperTRIBE/HSC_population_Msi2-DCD_vs_Msi2-MIG/figures/ST_Msi2DCD_vs_Msi2MIG.pdf", 14, 10, useDingbats = F )
+plot_volcano(hsc_stdcd_vs_stmig, title)
+dev.off()
+```
+
+MPP2 and MPP4 have different y-axis range, so need to customize code for that.
+
+```{r volcano plot for MPP2 and MPP4}
+# Function to plot volcano
+plot_volcano <- function(df, title) {
+  ggplot(data=df, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) +
+    geom_point(alpha=1, size=4) +
+    theme_minimal() +
+    theme(legend.position="none") + # removes color legend
+    xlab("\nlog2(fold change)") + ylab("-log10(p-value)\n") +
+    theme(axis.text=element_text(size=50, color="black"), axis.title=element_text(size=50, color="black")) + # make axis labels bigger
+    ggtitle(title) +
+    theme(plot.title = element_text(size=40)) + # add title to plot
+    ylim(c(0,10)) +
+    scale_color_manual( values = c( "padj<0.05"='red3', "Not Sig" ='black' ) ) + 
+    theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), 
+          panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5)) 
+}
+
+# MPP2
+hsc_mpp2dcd_vs_mpp2mig <- data.add.significance.values(hsc_mpp2dcd_vs_mpp2mig)
+title <- "MPP2: DCD vs MIG ; sig = padj < 0.05\n"
+pdf( "/Users/chuk/Documents/MSI2-hyperTRIBE/HSC_population_Msi2-DCD_vs_Msi2-MIG/figures/MPP2_Msi2DCD_vs_Msi2MIG.pdf", 14, 10, useDingbats = F )
+plot_volcano(hsc_mpp2dcd_vs_mpp2mig, title)
+dev.off()
+
+# MPP4
+hsc_mpp4dcd_vs_mpp4mig <- data.add.significance.values(hsc_mpp4dcd_vs_mpp4mig)
+title <- "MPP4: DCD vs MIG ; sig = padj < 0.05\n"
+pdf( "/Users/chuk/Documents/MSI2-hyperTRIBE/HSC_population_Msi2-DCD_vs_Msi2-MIG/figures/MPP4_Msi2DCD_vs_Msi2MIG.pdf", 14, 10, useDingbats = F )
+plot_volcano(hsc_mpp4dcd_vs_mpp4mig, title)
+dev.off()
+```
+
+
+
+
+

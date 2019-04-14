@@ -1,0 +1,307 @@
+---
+title: "gene expression heat map"
+author: "Karen Chu"
+date: "4/3/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r libraries}
+library(DESeq2)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(biomaRt)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+```
+
+Import data & set working directory.
+
+```{r pressure, echo=FALSE}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/FigS3I_LSC_LSK_heatmaps_of_genes_with_small_logFC/")
+
+lsc.readcounts <- readRDS("data/lsc_rnaseq_read_count_entrez_id.rds")
+lsc.df <- as.data.frame( assays(lsc.readcounts)$counts )
+colnames(lsc.df) <- paste("LSC-", colnames(lsc.df), sep="")
+
+lsk.readcounts <- readRDS("data/lsk_rnaseq_read_count_entrez_id.rds")
+lsk.df <- as.data.frame( assays(lsk.readcounts)$counts )
+colnames(lsk.df) <- paste("LSK-", colnames(lsk.df), sep="")
+
+lsc.lsk.df <- cbind(lsc.df, lsk.df)
+```
+
+Select for cell type: MIG or ADA. Prepare coldata.
+
+```{r select for cell type}
+# Subset read count dataframe to select for MIG and ADA.
+cell.type <- c("MIG|ADA")
+lsc.lsk.df <- lsc.lsk.df [ ,grepl(cell.type, colnames(lsc.lsk.df)) ]
+
+# Get colData for read counts.
+# @params readcount = RDS object of read count, which contains colData
+generate.coldata <- function(readcounts, celltype.input) {
+  
+  coldata <- as.data.frame( colData(readcounts) )
+  rownames(coldata) <- paste(celltype.input, "-", rownames(coldata), sep="")
+  coldata$cell.type <- celltype.input
+  coldata <- coldata [ grepl(cell.type, rownames(coldata)), ]
+  
+  return(coldata)
+  
+}
+
+lsc.coldata <- generate.coldata(lsc.readcounts, "LSC")
+lsk.coldata <- generate.coldata(lsk.readcounts, "LSK")
+
+lsc.lsk.coldata <- rbind(lsc.coldata, lsk.coldata)
+```
+
+
+Filter by rpkm >= 1.
+
+```{r filter by rpkm}
+### Step 2: Filter by rpkm >= 1
+# calculates transcript length based on exon lengths in TxDb; the width function takes into account that coordinates are 1-based, which means difference of exon coordinates + 1
+filter.by.rpkm <- function(df) {
+  
+  ebg <- exonsBy( TxDb.Mmusculus.UCSC.mm10.knownGene, by="gene" )
+  transcript.length <- sum(width(reduce(ebg))) 
+
+  # Subset and match order of genes in TxDb to the order in read count data.
+  length.bp <- transcript.length[ match(rownames(df), names(transcript.length)) ]
+  length.bp <- length.bp/1000 # convert bp to kilobase
+
+  # Calculate RPKM
+  df.sum.cols <- colSums(df) # sum read count for each sample
+  df.scale.factor <- df.sum.cols / 1000000 # divide sum by one million to get scaling factor
+  df.per.million <- sweep(df, 2, df.scale.factor, `/`) # divide read count by scaling factor for each sample
+  df.rpkm <- df.per.million / length.bp # divide read count by length of transcript
+
+  # Select genes whose median rpkm is greater than/equal to 1
+  df.rpkm.row.median <- apply(df.rpkm, 1, median) # take median for every gene
+  df.rpkm.median.filtered <- subset(df.rpkm.row.median, df.rpkm.row.median >= 1) # Select for genes with median >= 1
+  df.filtered.names <- names(df.rpkm.median.filtered)
+
+  df.rpkm.filtered <- subset(as.data.frame(df.rpkm), rownames(df.rpkm) %in% df.filtered.names)
+  df.filtered <- df [ rownames(df) %in% rownames(df.rpkm.filtered), ] # filter raw read count by the genes with rpkm >= 1
+  
+  return(df.filtered)
+
+}
+
+lsc.lsk.df.filtered <- filter.by.rpkm(lsc.lsk.df)
+```
+
+
+Run DESeq2.
+
+```{r deseq2}
+run.deseq <- function(df.filtered, coldata) {
+  
+  dds <- DESeqDataSetFromMatrix(
+	  countData = as.matrix(df.filtered), 
+	  colData = coldata, 
+	  design = ~cell.type + condition) #condition = normal (NS2) vs MSI2 hairpin KD (C)
+	  dds$condition <- relevel(dds$condition, "MIG") # intercept that DESeq2 calculates depends on the first factor. If "MIG" first, then results in log2foldchange(ADA/MIG). 
+
+  dds <- DESeq(dds)
+
+  return(dds)
+  
+}
+
+dds <- run.deseq(lsc.lsk.df.filtered, lsc.lsk.coldata)
+vsd <- varianceStabilizingTransformation(dds)
+lsc.lsk.dds <- as.data.frame( assay(vsd) ) # Get normalized counts
+```
+
+
+
+Plot PCA.
+
+```{r pca}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/FigS3I_LSC_LSK_heatmaps_of_genes_with_small_logFC/")
+
+pdf("figures/LSC_LSK_PCA.pdf")
+plotPCA(vsd, intgroup="condition")
+plotPCA(vsd, intgroup="cell.type")
+dev.off()
+```
+
+Plot MA plot
+
+```{r ma}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/FigS3I_LSC_LSK_heatmaps_of_genes_with_small_logFC/")
+
+res <- results(dds)
+pdf("figures/LSC_LSK_MAplot.pdf")
+plotMA(res, ylim=c(-5,5))
+dev.off()
+```
+
+
+
+Convert Entrez ID to gene symbol.
+
+
+```{r convert entrezid to gene symbol}
+library(org.Mm.eg.db)
+library(annotate)
+entrezid.to.genesymbol <- function(res) {
+  
+  res$entrez.id <- rownames(res)
+  
+  yuheng.read.count.entrez.id <- as.character(rownames(res))
+  yuheng.read.count.gene.symbol <- lookUp(yuheng.read.count.entrez.id, 'org.Mm.eg.db', 'SYMBOL')
+  yuheng.read.count.gene.symbol <- unlist(yuheng.read.count.gene.symbol)
+  res$gene <- yuheng.read.count.gene.symbol
+  
+  return(res)
+  
+}
+
+lsc.lsk.dds.with.genesymbols <- entrezid.to.genesymbol(lsc.lsk.dds)
+```
+
+
+Convert gene names to official gene symbols in Diu's list.
+
+
+```{r convert alias to official gene symbol}
+# Import Diu's gene list.
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/FigS3I_LSC_LSK_heatmaps_of_genes_with_small_logFC/")
+diu_gene.list <- read.csv("data/FigS3I_lsk_lsc_0.6frq_5fpkm_OCS_fpkm_adjEditSites_analysis.csv")
+diu_gene.list <- diu_gene.list [ , !(grepl("fpkm|X", colnames(diu_gene.list))) ]
+
+# Convert alias gene symbols to official gene symbols in Diu's list.
+# Need a for-loop in case there is an alias that alias2Symbol doesn't recognize and it errors out when running as single command.
+library("limma")
+diu_gene.list$official.gene.symbol <- "NA"
+
+for (i in 1:length(diu_gene.list$gene.symbol)) {
+  
+  official.gene.name <- alias2Symbol(diu_gene.list$gene.symbol[i], species = "Mm", expand.symbols = FALSE)
+  
+  if ( length(official.gene.name)==0 ) {
+    next
+  } else { diu_gene.list$official.gene.symbol[i] <- official.gene.name }
+
+}
+```
+
+Subset DESeq2 results for Diu's gene list. All genes in Diu's list are present in LSC and LSK list.
+
+
+```{r subset DESeq2 results for Diu's gene list}
+select.deseq.results.with.diu.gene.list <- function(res) {
+  
+  # Subset DESeq2 results for the genes in Diu's list.
+  res.subset <- res [ res$gene %in% diu_gene.list$official.gene.symbol, ]
+  res.subset <- na.omit(res.subset)
+
+  # Subset Diu's list to exclude genes that didn't make it through rpkm filter.
+  genes.that.didnt.make.it.through.rpkm.filter <- setdiff(diu_gene.list$official.gene.symbol, res.subset$gene) # These have rpkm median < 1, so leave them out.
+  diu_gene.list.subset <- diu_gene.list [ !(diu_gene.list$official.gene.symbol %in% genes.that.didnt.make.it.through.rpkm.filter), ]
+
+  # Reorder DESeq2 gene list to match Diu's gene list order.
+  res.subset.reordered <- res.subset [match(diu_gene.list.subset$official.gene.symbol, res.subset$gene), ]
+  
+  return(res.subset.reordered)
+  
+}
+
+lsc.lsk.subset <- select.deseq.results.with.diu.gene.list(lsc.lsk.dds.with.genesymbols)
+```
+
+Take the mean of the triplicates.
+
+```{r mean of triplicates}
+# Subset for only sample columns (and exclude entrez id and gene symbol columns)
+lsc.lsk.subset.samples.only <- lsc.lsk.subset [ , grepl("Sample", colnames(lsc.lsk.subset)) ]
+
+# Subset data by MIG vs ADA and LSC vs LSK. Take the mean of triplicates.
+select.by.cell.type.and.condition <- function(df, df.celltype, df.condition) {
+  
+  select.condition <- df [ , grepl( df.condition, colnames(df) ) ]
+  select.celltype.and.condition <- select.condition [ , grepl(df.celltype, colnames(select.condition)) ]
+  
+  df.mean <- apply(select.celltype.and.condition, 1, mean)
+  
+}
+
+lsc.mean.MIG <- select.by.cell.type.and.condition(lsc.lsk.subset.samples.only, "LSC", "MIG")
+lsc.mean.ADA <- select.by.cell.type.and.condition(lsc.lsk.subset.samples.only, "LSC", "ADA")
+lsk.mean.MIG <- select.by.cell.type.and.condition(lsc.lsk.subset.samples.only, "LSK", "MIG")
+lsk.mean.ADA <- select.by.cell.type.and.condition(lsc.lsk.subset.samples.only, "LSK", "ADA")
+
+# Combine all the conditions and cell types together to prep for z-transform.
+lsc.lsk.mean.MIG.ADA <- cbind(lsk.mean.MIG, lsc.mean.MIG, lsk.mean.ADA, lsc.mean.ADA)
+```
+
+
+z transform the means across all 4 conditions.
+
+```{r z-transform rows}
+lsc.lsk.z.transform <- t(apply(lsc.lsk.mean.MIG.ADA, 1, scale))
+colnames(lsc.lsk.z.transform) <- c("lsk.MIG", "lsc.MIG", "lsk.ADA", "lsc.ADA")
+```
+
+Plot heatmaps.
+
+
+```{r gene expression heatmap}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/FigS3I_LSC_LSK_heatmaps_of_genes_with_small_logFC/figures/")
+
+pdf("FigS3I_LSK_LSC_gene_expression_heatmap.pdf", 10, 14)
+ht = Heatmap(lsc.lsk.z.transform, 
+        col = colorRamp2(c(-1, 0, 1), 
+                         c("blue", "white", "red")),
+        name="Gene expression\n",
+        cluster_rows = FALSE, cluster_columns = FALSE, show_row_names = FALSE, column_names_gp = gpar(fontsize = 20),
+        heatmap_legend_param = list(color_bar = "continuous", legend_direction = "horizontal", legend_width = unit(9, "cm")) )
+draw(ht, heatmap_legend_side = "bottom")
+dev.off()
+```
+
+Plot Diu's gene list.
+
+```{r plot Diu's gene list}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/FigS3I_LSC_LSK_heatmaps_of_genes_with_small_logFC/")
+
+edit.freq <- diu_gene.list [ ,grepl("fr", colnames(diu_gene.list) ) ]
+edit.freq$official.gene.symbol <- diu_gene.list$official.gene.symbol
+edit.site <- diu_gene.list [ ,grepl("num.edit", colnames(diu_gene.list) ) ]
+edit.site$official.gene.symbol <- diu_gene.list$official.gene.symbol
+
+# Heatmaps
+pdf("figures/FigS3I_LSK_LSC_edit_frequency_heatmap.pdf", 10, 14)
+ht = Heatmap(edit.freq[,1:6], 
+        col = colorRamp2(c( 0, 0.3, 0.5, 1 ), c("blue", "blue", "white", "red")),
+        name="Edit frequency\n",
+        cluster_rows = FALSE, cluster_columns = FALSE, show_row_names = FALSE, column_names_gp = gpar(fontsize = 20),
+        heatmap_legend_param = list(color_bar = "continuous", legend_direction = "horizontal", legend_width = unit(9, "cm")) )
+draw(ht, heatmap_legend_side = "bottom")
+dev.off()
+
+pdf("figures/FigS3I_LSK_LSC_edit_site_heatmap.pdf", 10, 14)
+ht = Heatmap(edit.site[,1:6], 
+        col = colorRamp2(c( 0, 5, 10, 25, 111 ), c("blue", "blue", "white", "red", "red")),
+        name="Edit frequency\n",
+        cluster_rows = FALSE, cluster_columns = FALSE, show_row_names = FALSE, column_names_gp = gpar(fontsize = 20),
+        heatmap_legend_param = list(color_bar = "continuous", legend_direction = "horizontal", legend_width = unit(9, "cm")) )
+draw(ht, heatmap_legend_side = "bottom")
+dev.off()
+```
+
+
+
+
+
+
+

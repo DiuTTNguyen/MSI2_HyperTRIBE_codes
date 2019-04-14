@@ -1,0 +1,105 @@
+---
+title: "MOLM13 Msi2-DCD vs Msi2-MIG volcano plot"
+output: html_document
+---
+
+Purpose: We want to know if there is a differential expression in MOLM13 when we overexpress Msi2.
+
+Methods: Diu overexpressed Msi2-DCD (DCD is enzymatically dead ADAR) for 48 hours and then performed RNA-sequencing. Before, when Msi2 was overexpressed for much longer (if I remember, a couple of weeks), there was differential gene expression. 
+
+Results: This volcano plot shows that 48 hours of overexpression was too short to see differential gene expression.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(openxlsx)
+library(dplyr)
+library(ggplot2)
+```
+
+Below runs Yuheng's code that does DESeq on Msi2-DCD vs Msi2-MIG and creates MA plot.
+
+```{r Yuheng's code}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Msi2ADAR_Supplemental/")
+df <- read.csv( 'data/molm13_gene_expression.csv', header=TRUE )
+se <- SummarizedExperiment( assays = as.matrix( df[ c( grep( 'MIG_', names(df) ), grep( 'DCD_', names(df) ) ) ] ), 
+                            colData = DataFrame( condition = c( rep( 'MIG', 3 ), rep( 'DCD', 3 ) ) ) )
+
+rowmask <- df$MIG.fpkm >= 5 & df$DCD.fpkm >= 5
+dds <- DESeqDataSet( se[ rowmask, ], ~condition )
+
+colData(dds)$condition # Look at the levels. It is DCD and then MIG. That means log2FC will be MIG/DCD. Verified with Han.
+
+dds <- DESeq( dds, betaPrior = F )
+res <- results( dds )
+
+df <- as.data.frame( res )
+df <- df[ order( df$padj, decreasing = T ), ]
+rowmask1 <- df$log2FoldChange > 0.5
+rowmask2 <- df$log2FoldChange < -0.5
+rowmask3 <- !( rowmask1 | rowmask2 )
+df$shape <- 'mid'
+df$shape[ rowmask1 ] <- 'hi'
+df$shape[ rowmask2 ] <- 'lo'
+#df$log2FoldChange[ rowmask1 ] <- 0.5
+#df$log2FoldChange[ rowmask2 ] <- -0.5
+
+# Significance defined as p-adjusted value < 0.05 (red dot/triangle) and log2(fold change) > 0.5 (upward triangle) or < -0.5 (downward triangle)
+#pdf( "supp_fig_1_ma_plot.pdf", 5, 4, useDingbats = F )
+qplot( baseMean, log2FoldChange, data = df, geom = 'point', color = padj > .05, shape = shape ) +
+  geom_hline( yintercept = 0, linetype = 3 ) + 
+  scale_x_log10() + 
+  scale_color_manual( values = c( 'red3', 'grey32' ) ) + 
+  scale_shape_manual( values = c( 2, 20, 6 ), limits = c( 'hi', 'mid', 'lo' ) ) + 
+  ylim( -0.5, 0.5 ) + 
+  xlab( "mean of normalized counts" ) + ylab( "log2 fold change" ) + 
+  theme_classic() + theme( legend.position = 'none' ) +
+  ggtitle("MOLM13 gene expression") + # plot title
+  theme(plot.title = element_text(size=40)) + # make title font size 40
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) + # make axis labels bigger
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black", size=1)) # remove top and right plot border line
+#dev.off()
+
+```
+
+Convert to volcano plot.
+
+```{r volcano}
+mutateddf <- mutate(df, sig=ifelse(df$padj<0.05, "padj<0.05", "Not Sig")) #Will have different colors depending on significance
+mutateddf <- mutateddf[ order( mutateddf$padj, decreasing = F ), ]
+
+# Volcano plot for MOLM13 gene expression
+pdf( "/Users/chuk/Documents/MSI2-hyperTRIBE/Msi2ADAR_Supplemental/figures/MOLM13_Msi2-MIG_vs_DCD.pdf", 15, 10, useDingbats = F )
+plot_volcano <- function(df, title) {
+  ggplot(data=mutateddf, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) + # adjusting p-value by multiple hypothesis testing (Benjamini-Hochberg)
+    geom_point(alpha=1, size=4) +
+    theme_minimal() +
+    theme(legend.position="none") + # removes color legend
+    xlab("\nlog2(Msi2-MIG/DCD)") + ylab("-log10(p-value)\n") +
+    scale_x_continuous(breaks=c(-0.5,-0.3, 0, 0.3, 0.5)) +
+    #ylim(c(0,10)) +
+    theme(axis.text=element_text(size=50, color="black"), axis.title=element_text(size=50, color="black")) + # make axis labels bigger
+    ggtitle(title) +
+    theme(plot.title = element_text(size=40)) + # add title to plot
+    scale_color_manual( values = c( "padj<0.05"='red3', "Not Sig" ='black' ) ) + 
+    geom_vline( xintercept = -0.5, linetype = 2 ) + # threshold for defining significant event log2foldchange < -6
+    geom_vline( xintercept = 0.5, linetype = 2 ) + # threshold for defining significant event log2foldchange > 6
+    theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), 
+          panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5)) 
+  
+}
+plot_volcano(df, "MOLM13 gene expression: Msi2-MIG vs DCD\n")
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+

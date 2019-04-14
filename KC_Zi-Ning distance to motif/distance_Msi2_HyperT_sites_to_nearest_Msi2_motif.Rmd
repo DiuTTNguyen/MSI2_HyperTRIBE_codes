@@ -1,0 +1,93 @@
+---
+title: "Distance of Msi2 HyperTRIBE edited sites from nearest Msi2 motif"
+output: html_document
+---
+
+Purpose: Create a probability density plot of Zi-Ning's histogram, which plots the distance between Msi2 HyperTRIBE edited sites and the nearest Msi2 motif.
+
+Method: Load the alignMotifsWorkspace.RData object Zi-Ning provided us.
+
+Results: /figures/dist_msi2_hypertribe_edited_sites_to_nearest_msi2_motif.pdf
+/figures/probability_of_Msi2_HyperTRIBE_from_Msi2_motif.txt
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/MOLM13/")
+
+load("data/alignMotifsWorkspace.RData")
+```
+
+Below is copied from Zi-Ning's alignMotifs.R file.
+
+```{r histogram}
+# histogram
+df <- data.frame(dist=query.df$dist.to.motif)
+ggplot(data=df, aes(df$dist)) + 
+  geom_histogram(breaks=seq(-500,500, by=20), 
+                 col="white", 
+                 fill="blue", 
+                 alpha=0.2) + 
+  labs(title="Distance to nearest motif") +
+  labs(x="Distance (bp)") +
+  labs(y="Count")
+```
+
+Convert histogram to PDF plot.
+
+```{r PDF}
+save.path <- "/Users/chuk/Documents/MSI2-hyperTRIBE/MOLM13/figures/"
+pdf(paste0(save.path, "dist_msi2_hypertribe_edited_sites_to_nearest_msi2_motif.pdf"), 10, 10, useDingbats = F )
+ggplot(df, aes(x=df$dist)) + geom_density(fill="dodgerblue") +
+  scale_x_continuous(limits = c(-500, 500)) +
+  labs(title="Distance to nearest motif (from Zi-Ning's Rdata)\n") +
+  labs(x="\nDistance (bp)") +
+  labs(y="Density\n") +
+  theme_classic() +
+  theme(plot.title = element_text(size=30), 
+        axis.text=element_text(size=40), 
+        axis.text.x = element_text(angle = 90),
+        axis.title.x = element_text(size=40), 
+        axis.title.y = element_text(size=40))
+dev.off()
+```
+
+Calculate the probability of an Msi2 HyperTRIBE edited site to be observed within 500 bp away from an Msi2 motif.
+
+```{r probability}
+ecdf.df <- ecdf(df$dist)
+ecdf.values <- data.frame(x = environment(ecdf.df)$x, y = environment(ecdf.df)$y)
+
+output <- ""
+
+for (i in c(1, 10, seq(0, 500, 50))) {
+  
+  if(i==0) next
+  
+  ecdf.interval.i <- subset(ecdf.values, x <= i) # +250 to negative infinity
+  ecdf.interval.neg.i <- subset(ecdf.values, x < -i) # -250 to negative infinity
+
+  probability.pos.i.to.neg.i <- (ecdf.interval.i[ nrow(ecdf.interval.i),]$y) - (ecdf.interval.neg.i[ nrow(ecdf.interval.neg.i),]$y)
+
+  probability.output <- capture.output( cat("Probability of finding a Msi2 HyperTribe edited site ", i, "bp away from Msi2 motif in MOLM13 is ", probability.pos.i.to.neg.i, "\n\n") )
+  
+  output <- c(output, probability.output)
+  
+}
+
+writeLines(output, paste0(save.path, "probability_of_Msi2_HyperTRIBE_from_Msi2_motif.txt"))
+```
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,262 @@
+---
+title: "HSPC MIG and ADAR gene expression heat map"
+author: "Karen Chu"
+date: "4/3/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r libraries}
+library(DESeq2)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(biomaRt)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+```
+
+Import data & set working directory.
+
+```{r pressure, echo=FALSE}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap/")
+
+hspc_readcounts <- readRDS("data/HSPC_rnaseq_read_count_entrez_id.rds")
+df <- as.data.frame( assays(hspc_readcounts)$counts )
+```
+
+Select for cell type: MIG or ADA. Prepare coldata.
+
+```{r select for cell type}
+cell.type <- c("MIG|ADA")
+df <- df [ ,grepl(cell.type, colnames(df)) ]
+coldata <- as.data.frame( colData(hspc_readcounts) ) 
+coldata <- coldata [ grepl(cell.type, rownames(coldata)), ]
+```
+
+
+Filter by rpkm >= 1.
+
+```{r filter by rpkm}
+### Step 2: Filter by rpkm >= 1
+# calculates transcript length based on exon lengths in TxDb; the width function takes into account that coordinates are 1-based, which means difference of exon coordinates + 1
+ebg <- exonsBy( TxDb.Mmusculus.UCSC.mm10.knownGene, by="gene" )
+transcript.length <- sum(width(reduce(ebg))) 
+
+# Subset and match order of genes in TxDb to the order in read count data.
+length.bp <- transcript.length[ match(rownames(df), names(transcript.length)) ]
+length.bp <- length.bp/1000 # convert bp to kilobase
+
+# Calculate RPKM
+df.sum.cols <- colSums(df) # sum read count for each sample
+df.scale.factor <- df.sum.cols / 1000000 # divide sum by one million to get scaling factor
+df.per.million <- sweep(df, 2, df.scale.factor, `/`) # divide read count by scaling factor for each sample
+df.rpkm <- df.per.million / length.bp # divide read count by length of transcript
+
+# Select genes whose median rpkm is greater than/equal to 1
+df.rpkm.row.median <- apply(df.rpkm, 1, median) # take median for every gene
+df.rpkm.median.filtered <- subset(df.rpkm.row.median, df.rpkm.row.median >= 1) # Select for genes with median >= 1
+df.filtered.names <- names(df.rpkm.median.filtered)
+
+df.rpkm.filtered <- subset(as.data.frame(df.rpkm), rownames(df.rpkm) %in% df.filtered.names)
+df.filtered <- df [ rownames(df) %in% rownames(df.rpkm.filtered), ] # filter raw read count by the genes with rpkm >= 1
+```
+
+
+Run DESeq2.
+
+```{r deseq2}
+dds <- DESeqDataSetFromMatrix(
+	  countData = as.matrix(df.filtered), 
+	  colData = coldata, 
+	  design = ~cell + condition) #condition = normal (NS2) vs MSI2 hairpin KD (C)
+	  dds$condition <- relevel(dds$condition, "MIG") # intercept that DESeq2 calculates depends on the first factor. If "MIG" first, then results in log2foldchange(ADA/MIG). 
+
+dds <- DESeq(dds)
+vsd <- varianceStabilizingTransformation(dds)
+normalized.counts <- as.data.frame( assay(vsd) ) # Get normalized counts
+```
+
+Plot PCA.
+
+```{r pca}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap/")
+pdf("figures/HSPC_PCA.pdf")
+plotPCA(vsd, intgroup="condition")
+plotPCA(vsd, intgroup="cell")
+dev.off()
+```
+
+Plot MA plot
+
+```{r ma}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap/")
+
+res <- results(dds)
+
+pdf("figures/HSPC_MAplot.pdf")
+plotMA(res, ylim=c(-5,5))
+dev.off()
+```
+
+
+
+Convert Entrez ID to gene symbol.
+
+
+```{r convert entrezid to gene symbol}
+res <- normalized.counts
+res$entrez.id <- rownames(res)
+
+library(org.Mm.eg.db)
+library(annotate)
+yuheng.read.count.entrez.id <- as.character(rownames(res))
+yuheng.read.count.gene.symbol <- lookUp(yuheng.read.count.entrez.id, 'org.Mm.eg.db', 'SYMBOL')
+yuheng.read.count.gene.symbol <- unlist(yuheng.read.count.gene.symbol)
+res$gene <- yuheng.read.count.gene.symbol
+```
+
+Subset and order the same as in Diu's morpheous heatmap.
+The genes that are missing have an rpkm median of less than 1. Diu says that these genes should pass the filter because she filtered by fpkm > 5, but I checked the rpkm values from these read counts, and the median is less than 1. One explanation could be that the way fpkm was calculated is causing these differences (ie. if the average was taken instead of the median, an outlier fpkm value causes the mean to be a much higher value than the median). 
+
+
+```{r subset and order}
+# Import Diu's gene list.
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap/")
+diu_gene.list <- read.csv("data/HSPC_fpkm5_0.1freq_OCS_rearranged.csv")
+diu_gene.list <- diu_gene.list[,1:5] #Get rid of fpkm columns, which all have "NA" values.
+
+# Convert alias gene symbols to official gene symbols in Diu's list.
+# Need a for-loop because there is a gene symbol that alias2Symbol doesn't recognize and it errors out when running as single command.
+library("limma")
+diu_gene.list$official.gene.symbol <- "NA"
+
+for (i in 1:length(diu_gene.list$gene.symbol)) {
+  
+  official.gene.name <- alias2Symbol(diu_gene.list$gene.symbol[i], species = "Mm", expand.symbols = FALSE)
+  
+  if ( length(official.gene.name)==0 ) {
+    next
+  } else { diu_gene.list$official.gene.symbol[i] <- official.gene.name }
+
+}
+
+# There is one NA that alias2Symbol cannot find the official gene symbol, but I found it in NCBI. I will manually input it into the dataframe. This is the gene symbol that causes an error when trying to run alias2Symbol as single command.
+diu_gene.list [ diu_gene.list$official.gene.symbol=="NA",] # Should be BC017643
+diu_gene.list [ diu_gene.list$gene=="BC017643", ]$official.gene.symbol <- "Cybc1"
+
+# Subset DESeq2 results for the genes in Diu's list.
+res.subset <- res [ res$gene %in% diu_gene.list$official.gene.symbol, ]
+res.subset <- na.omit(res.subset)
+
+# Subset Diu's list to exclude genes that didn't make it through rpkm filter.
+genes.that.didnt.make.it.through.rpkm.filter <- setdiff(diu_gene.list$official.gene.symbol, res.subset$gene) # These have rpkm median < 1, so leave them out.
+diu_gene.list.subset <- diu_gene.list [ !(diu_gene.list$official.gene.symbol %in% genes.that.didnt.make.it.through.rpkm.filter), ]
+
+# Reorder DESeq2 gene list to match Diu's gene list order.
+res.subset.reordered <- res.subset [match(diu_gene.list.subset$official.gene.symbol, res.subset$gene), ]
+res.gene.list.order <- res.subset.reordered$gene
+```
+
+Take mean of duplicate samples.
+
+```{r mean of duplicates}
+res.subset.reordered <- res.subset.reordered [ , grepl("Sample", colnames(res.subset.reordered)) ]
+
+# Subset data by MIG vs ADA and LT, ST, MPP2, or MPP4. Take the mean of duplicates.
+select.by.cell.type.and.condition <- function(df, df.celltype, df.condition) {
+  
+  select.condition <- df [ , grepl( df.condition, colnames(df) ) ]
+  select.celltype.and.condition <- select.condition [ , grepl(df.celltype, colnames(select.condition)) ]
+  
+  df.mean <- apply(select.celltype.and.condition, 1, mean)
+  
+}
+
+lt.adar <- select.by.cell.type.and.condition(res.subset.reordered, "LT", "ADA")
+lt.mig <- select.by.cell.type.and.condition(res.subset.reordered, "LT", "MIG")
+
+st.adar <- select.by.cell.type.and.condition(res.subset.reordered, "ST", "ADA")
+st.mig <- res.subset.reordered [ , grepl("ST", colnames(res.subset.reordered)) ]
+st.mig <- st.mig [ , grepl("MIG", colnames(st.mig)) ] # No duplicate so can't calculate mean
+
+mpp2.adar <- select.by.cell.type.and.condition(res.subset.reordered, "MPP2", "ADA")
+mpp2.mig <- select.by.cell.type.and.condition(res.subset.reordered, "MPP2", "MIG")
+
+mpp4.adar <- select.by.cell.type.and.condition(res.subset.reordered, "MPP4", "ADA")
+mpp4.mig <- select.by.cell.type.and.condition(res.subset.reordered, "MPP4", "MIG")
+
+# Combine all means into one dataframe
+res.subset.reordered.means.MIG <- cbind(lt.mig, st.mig, mpp2.mig, mpp4.mig)
+res.subset.reordered.means.ADA <- cbind(lt.adar, st.adar, mpp2.adar, mpp4.adar)
+```
+
+Z transform each row.
+
+
+```{r z-transform rows}
+res.z.transform.MIG <- t(apply(res.subset.reordered.means.MIG, 1, scale))
+res.z.transform.ADA <- t(apply(res.subset.reordered.means.ADA, 1, scale))
+
+res.z.transform.MIG <- as.data.frame(res.z.transform.MIG)
+colnames(res.z.transform.MIG) <- colnames(res.subset.reordered.means.MIG)
+res.z.transform.ADA <- as.data.frame(res.z.transform.ADA)
+colnames(res.z.transform.ADA) <- colnames(res.subset.reordered.means.ADA)
+```
+
+```{r save data used for plotting}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap/")
+
+res.MIG <- cbind(res.z.transform.MIG, res.gene.list.order)
+res.ADA <- cbind(res.z.transform.ADA, res.gene.list.order)
+
+write.csv(diu_gene.list.subset, "output/diu_gene_list_subset_for_plotting_editing_frequency_heatmap.csv")
+write.csv(res.MIG, "output/res_z_transform_MIG_for_plotting_normalized_MIG_gene_expression.csv")
+write.csv(res.ADA, "output/res_z_transform_ADA_for_plotting_normalized_ADAR_gene_expression.csv")
+```
+
+Plot heatmaps.
+
+
+```{r }
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap/")
+
+# Heatmaps: editing frequency heatmap
+pdf("figures/editing_frequency.pdf", 10, 14)
+ht = Heatmap(diu_gene.list.subset[,2:5], col = colorRamp2(c(0, 0.05, 0.08, 0.2, 0.85), c("blue", "blue", "white", "red", "red")), name="",
+    cluster_rows = FALSE, cluster_columns = FALSE, show_row_names = FALSE, column_names_gp = gpar(fontsize = 20),
+    heatmap_legend_param = list(color_bar = "continuous", legend_direction = "horizontal", legend_width = unit(9, "cm")) )
+draw(ht, heatmap_legend_side = "bottom")
+dev.off()
+
+# Heatmap: MIG normalized counts
+pdf("figures/MIG_VST_counts.pdf", 10, 14)
+ht = Heatmap(res.z.transform.MIG, 
+        col = colorRamp2(c(-2, -1, 0, 1, 2), c("blue", "blue", "white", "red", "red")),
+        name="MIG VarianceStabilizedTransform counts",
+        cluster_rows = FALSE, cluster_columns = FALSE, show_row_names = FALSE, column_names_gp = gpar(fontsize = 20),
+        heatmap_legend_param = list(color_bar = "continuous", legend_direction = "horizontal", legend_width = unit(9, "cm")) )
+draw(ht, heatmap_legend_side = "bottom")
+dev.off()
+
+# Heatmap: ADAR normalized counts
+pdf("figures/ADAR_VST_counts.pdf", 10, 14)
+ht = Heatmap(res.z.transform.ADA, 
+        col = colorRamp2(c(-2, -1, 0, 1, 2), c("blue", "blue", "white", "red", "red")),
+        name="ADAR VarianceStabilizedTransform counts",
+        cluster_rows = FALSE, cluster_columns = FALSE, show_row_names = FALSE, column_names_gp = gpar(fontsize = 20),
+        heatmap_legend_param = list(color_bar = "continuous", legend_direction = "horizontal", legend_width = unit(9, "cm")) )
+draw(ht, heatmap_legend_side = "bottom")
+dev.off()
+```
+
+
+
+
+
+
+

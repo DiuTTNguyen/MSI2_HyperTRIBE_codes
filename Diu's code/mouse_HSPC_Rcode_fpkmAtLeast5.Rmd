@@ -1,0 +1,298 @@
+---
+title: "mouse_HSPC_Rcode_fpkmAtLeast5_freqAtLeast0.1"
+author: "Diu Nguyen"
+date: "11/15/2018"
+output: html_document
+---
+```{r}
+#filter by fpkm >=5 and different frequency >=0.1 
+Mouse_LT <- read.csv("./Mouse_HSC_LT.csv", header=TRUE)
+Mouse_ST <- read.csv("./Mouse_HSC_ST.csv", header=TRUE)
+Mouse_MPP2 <- read.csv("./Mouse_HSC_MPP2.csv", header=TRUE)
+Mouse_MPP4 <- read.csv("./Mouse_HSC_MPP4.csv", header=TRUE)
+
+Mouse_LT_Filtered <- subset(Mouse_LT, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & diff.frequency >=0.1)
+Mouse_ST_Filtered <- subset(Mouse_ST, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & diff.frequency >=0.1)
+Mouse_MPP2_Filtered <- subset(Mouse_MPP2, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & diff.frequency >= 0.1)
+Mouse_MPP4_Filtered <- subset(Mouse_MPP4, ADA.fpkm >= 5 & DCD.fpkm >= 5 & MIG.fpkm >= 5 & diff.frequency >=0.1)
+
+write.csv (Mouse_LT_Filtered, file = "mouseLT_snp_5fpkm_0.1freq.csv")
+write.csv (Mouse_ST_Filtered, file = "mouseST_snp_5fpkm_0.1freq.csv")
+write.csv (Mouse_MPP2_Filtered, file = "mouseMPP2_snp_5fpkm_0.1freq.csv")
+write.csv (Mouse_MPP4_Filtered, file = "mouseMPP4_snp_5fpkm_0.1freq.csv")
+
+```
+
+```{r}
+#count number of utr3, utr5 and cds sites in LT filtered with fpkm
+print (length(which(Mouse_LT_Filtered$annotation == "utr3")))
+print (length(which(Mouse_LT_Filtered$annotation == "utr5")))
+print (length(which(Mouse_LT_Filtered$annotation == "cds")))
+print (dim(Mouse_LT_Filtered)[1])
+```
+
+```{r}
+#Adjusting the number of edit sites per gene after filtering with fpkm and freq
+Mouse_ST_Filtered_edited <- read.csv("mouseST_snp_5fpkm_0.1freq.csv",header=TRUE)
+
+NumberofRow <- dim(Mouse_ST_Filtered_edited)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_ST_Filtered_edited[[6]][i]
+  # annotation
+  othersWithSameGene <- subset(Mouse_ST_Filtered_edited, gene.symbol == geneSymbolVal)
+  #length(othersWithSameGene)which(gene.symbol== geneSymbolVal))
+  Mouse_ST_Filtered_edited$new.num.edits[i] <- nrow(othersWithSameGene)
+}
+write.csv(Mouse_ST_Filtered_edited, file = "mouse_ST_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv")
+
+```
+
+```{r}
+#Adjusting the number of edit sites per gene after filtering with fpkm and freq
+Mouse_LT_Filtered_edited <- read.csv("mouseLT_snp_5fpkm_0.1freq.csv",header=TRUE)
+
+NumberofRow <- dim(Mouse_LT_Filtered_edited)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_LT_Filtered_edited[[6]][i]
+  # annotation
+  othersWithSameGene <- subset(Mouse_LT_Filtered_edited, gene.symbol == geneSymbolVal)
+  Mouse_LT_Filtered_edited$new.num.edits[i] <- nrow(othersWithSameGene)
+}
+write.csv(Mouse_LT_Filtered_edited, file = "mouse_LT_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv")
+
+```
+
+```{r}
+#Adjusting the number of edit sites per gene after filtering with fpkm and freq
+Mouse_MPP2_Filtered_edited <- read.csv("mouseMPP2_snp_5fpkm_0.1freq.csv",header=TRUE)
+
+NumberofRow <- dim(Mouse_MPP2_Filtered_edited)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_MPP2_Filtered_edited[[6]][i]
+  # annotation
+  othersWithSameGene <- subset(Mouse_MPP2_Filtered_edited, gene.symbol == geneSymbolVal)
+  Mouse_MPP2_Filtered_edited$new.num.edits[i] <- nrow(othersWithSameGene)
+}
+write.csv(Mouse_MPP2_Filtered_edited, file = "mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv")
+
+```
+
+```{r}
+#Adjusting the number of edit sites per gene after filtering with fpkm and freq
+Mouse_MPP4_Filtered_edited <- read.csv("mouseMPP4_snp_5fpkm_0.1freq.csv",header=TRUE)
+
+NumberofRow <- dim(Mouse_MPP4_Filtered_edited)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_MPP4_Filtered_edited[[6]][i]
+  # annotation
+  othersWithSameGene <- subset(Mouse_MPP4_Filtered_edited, gene.symbol == geneSymbolVal)
+  Mouse_MPP4_Filtered_edited$new.num.edits[i] <- nrow(othersWithSameGene)
+}
+write.csv(Mouse_MPP4_Filtered_edited, file = "mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv")
+
+```
+
+
+```{r}
+#Deduplicate sites of the same gene->generate gene list WITHOUT distinguishing utr3, utr5 and cds in MPP2
+Mouse_MPP2_FilteredCopy <- read.csv("mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv", header=TRUE)
+
+Mouse_MPP2_FilteredCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(Mouse_MPP2_FilteredCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_MPP2_FilteredCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- Mouse_MPP2_FilteredCopy[[4]][i]
+  
+  othersWithSameGene <- subset(Mouse_MPP2_Filtered_edited, gene.symbol == geneSymbolVal)
+  
+  othersWithSame <- othersWithSameGene[order(-othersWithSameGene$diff.frequency),]
+  topGenePos <- othersWithSame[[4]][1]
+  
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+    #print("this is the one")
+    Mouse_MPP2_FilteredCopy[[20]][i] = 0
+  } else {
+    #print(paste("dedupping", toString(currentRecordPos)))
+    Mouse_MPP2_FilteredCopy[[20]][i] = 1
+  }
+}
+
+Mouse_MPP2_Dedupped <- subset(Mouse_MPP2_FilteredCopy, Mouse_MPP2_FilteredCopy$Dedupped_GeneSymbol < 1)
+print(dim(Mouse_MPP2_Dedupped)[1])
+write.csv(Mouse_MPP2_Dedupped, file = "mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+
+```
+
+```{r}
+#Deduplicate sites of the same gene->generate gene list WITHOUT distinguishing utr3, utr5 and cds in MPP4
+Mouse_MPP4_FilteredCopy <- read.csv("mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv")
+
+Mouse_MPP4_FilteredCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(Mouse_MPP4_FilteredCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_MPP4_FilteredCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- Mouse_MPP4_FilteredCopy[[4]][i]
+  
+  othersWithSameGene <- subset(Mouse_MPP4_Filtered_edited, gene.symbol == geneSymbolVal)
+  
+  othersWithSame <- othersWithSameGene[order(-othersWithSameGene$diff.frequency),]
+  topGenePos <- othersWithSame[[4]][1]
+  #print("top gene pos")
+  #print(topGenePos)
+  
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+    #print("this is the one")
+    Mouse_MPP4_FilteredCopy[[20]][i] = 0
+  } else {
+    #print(paste("dedupping", toString(currentRecordPos)))
+    Mouse_MPP4_FilteredCopy[[20]][i] = 1
+  }
+}
+
+Mouse_MPP4_Dedupped <- subset(Mouse_MPP4_FilteredCopy, Mouse_MPP4_FilteredCopy$Dedupped_GeneSymbol < 1)
+print(dim(Mouse_MPP4_Dedupped)[1])
+write.csv(Mouse_MPP4_Dedupped, file = "mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+
+```
+
+
+```{r}
+#Deduplicate sites of the same gene->generate gene list WITHOUT distinguishing utr3, utr5 and cds in LT
+Mouse_LT_FilteredCopy <- read.csv("mouse_LT_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv")
+
+Mouse_LT_FilteredCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(Mouse_LT_FilteredCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_LT_FilteredCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- Mouse_LT_FilteredCopy[[4]][i]
+  
+  othersWithSameGene <- subset(Mouse_LT_Filtered_edited, gene.symbol == geneSymbolVal)
+  
+  othersWithSame <- othersWithSameGene[order(-othersWithSameGene$diff.frequency),]
+  topGenePos <- othersWithSame[[4]][1]
+  #print("top gene pos")
+  #print(topGenePos)
+  
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+    #print("this is the one")
+    Mouse_LT_FilteredCopy[[20]][i] = 0
+  } else {
+    #print(paste("dedupping", toString(currentRecordPos)))
+    Mouse_LT_FilteredCopy[[20]][i] = 1
+  }
+}
+
+Mouse_LT_Dedupped <- subset(Mouse_LT_FilteredCopy, Mouse_LT_FilteredCopy$Dedupped_GeneSymbol < 1)
+print(dim(Mouse_LT_Dedupped)[1])
+write.csv(Mouse_LT_Dedupped, file = "mouse_LT_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+
+```
+
+```{r}
+#Deduplicate sites of the same gene->generate gene list WITHOUT distinguishing utr3, utr5 and cds in ST
+Mouse_ST_FilteredCopy <- read.csv("mouse_ST_fpkmAtLeast5_freqAtLeast0.1_adjNoEdits.csv")
+
+Mouse_ST_FilteredCopy["Dedupped_GeneSymbol"] <- NA
+
+NumberofRow <- dim(Mouse_ST_FilteredCopy)[1]
+for (i in 1:NumberofRow) {
+  # gene.symbol  
+  geneSymbolVal <- Mouse_ST_FilteredCopy[[6]][i]
+  # current record pos
+  currentRecordPos <- Mouse_ST_FilteredCopy[[4]][i]
+  
+  othersWithSameGene <- subset(Mouse_ST_Filtered_edited, gene.symbol == geneSymbolVal)
+  
+  othersWithSame <- othersWithSameGene[order(-othersWithSameGene$diff.frequency),]
+  topGenePos <- othersWithSame[[4]][1]
+  #print("top gene pos")
+  #print(topGenePos)
+  
+  if (i %% 1000 == 0) {
+    print(i / NumberofRow * 100)
+  }
+  
+  if (topGenePos == currentRecordPos) {
+    #print("this is the one")
+    Mouse_ST_FilteredCopy[[20]][i] = 0
+  } else {
+    #print(paste("dedupping", toString(currentRecordPos)))
+    Mouse_ST_FilteredCopy[[20]][i] = 1
+  }
+}
+
+Mouse_ST_Dedupped <- subset(Mouse_ST_FilteredCopy, Mouse_ST_FilteredCopy$Dedupped_GeneSymbol < 1)
+print(dim(Mouse_ST_Dedupped)[1])
+write.csv(Mouse_ST_Dedupped, file = "mouse_ST_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+
+```
+
+```{r}
+#Merging all HSPC populations into one sheet
+Lt_GeneTarget<-read.csv("mouse_LT_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+St_GeneTarget<-read.csv("mouse_ST_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+LtST_total <- merge(Lt_GeneTarget,St_GeneTarget, by="gene.symbol", all = TRUE)
+
+MPP2_GeneTarget<-read.csv("mouse_MPP2_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+MPP4_GeneTarget<-read.csv("mouse_MPP4_fpkmAtLeast5_freqAtLeast0.1_genelist.csv")
+MPPs_total <- merge(MPP2_GeneTarget,MPP4_GeneTarget, by="gene.symbol",all=TRUE)
+
+HSCs_total <- merge(LtST_total,MPPs_total, by="gene.symbol", all=TRUE)
+write.csv(HSCs_total, file = "HSCs_GeneTargetsMerged.csv")
+```
+
+
+```{r}
+#Matching OCS heatmap and fpkm
+Freqmap <- read.csv("HSPC_fpkm5_0.1freq_OCS_rearranged.csv", header = TRUE)
+Expressiontable <- read.csv("Lt_St_MPP2_MPP4_fpkm_allgenes.csv", header = TRUE)
+Freqmap$ADA.fpkm.lt <- Expressiontable$ADA.fpkm.lt[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$DCD.fpkm.lt <- Expressiontable$DCD.fpkm.lt[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$MIG.fpkm.lt <- Expressiontable$MIG.fpkm.lt[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+
+Freqmap$ADA.fpkm.st <- Expressiontable$ADA.fpkm.st[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$DCD.fpkm.st <- Expressiontable$DCD.fpkm.st[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$MIG.fpkm.st <- Expressiontable$MIG.fpkm.st[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+
+Freqmap$ADA.fpkm.MPP2 <- Expressiontable$ADA.fpkm.MPP2[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$DCD.fpkm.MPP2 <- Expressiontable$DCD.fpkm.MPP2[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$MIG.fpkm.MPP2 <- Expressiontable$MIG.fpkm.MPP2[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+
+Freqmap$ADA.fpkm.MPP4 <- Expressiontable$ADA.fpkm.MPP4[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$DCD.fpkm.MPP4 <- Expressiontable$DCD.fpkm.MPP4[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+Freqmap$MIG.fpkm.MPP4 <- Expressiontable$MIG.fpkm.MPP4[match( Freqmap$gene.symbol, Expressiontable$gene.symbol )]
+
+write.csv(Freqmap, file = "HSC_fpkm5_0.1freq_OCS_matched_fpkm_final.csv")
+```
+
+
+
+
+
+
+

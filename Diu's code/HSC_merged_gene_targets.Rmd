@@ -1,0 +1,32 @@
+---
+title: "HSC merged data"
+author: "Diu Nguyen"
+date: "8/5/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Importing the dataset
+
+```{r}
+Lt_GeneTarget<-read.csv("~/Rcode/Rpractice/Mouse_HSC/gene_lists/mouse_LT_snp_filtered_dedupped_genelist.csv")
+St_GeneTarget<-read.csv("~/Rcode/Rpractice/Mouse_HSC/gene_lists/mouse_ST_snp_filtered_dedupped_genelist.csv")
+LtST_total <- merge(Lt_GeneTarget,St_GeneTarget, by="gene.symbol", all = TRUE)
+
+MPP2_GeneTarget<-read.csv("~/Rcode/Rpractice/Mouse_HSC/gene_lists/mouse_MPP2_snp_filtered_dedupped_genelist.csv")
+MPP4_GeneTarget<-read.csv("~/Rcode/Rpractice/Mouse_HSC/gene_lists/mouse_MPP4_snp_filtered_dedupped_genelist.csv")
+MPPs_total <- merge(MPP2_GeneTarget,MPP4_GeneTarget, by="gene.symbol",all=TRUE)
+
+HSCs_total <- merge(LtST_total,MPPs_total, by="gene.symbol", all=TRUE)
+
+```
+
+
+```{r}
+#saving the data as a csv file
+write.csv(HSCs_total, file = "HSCs_GeneTargetsMerged.csv")
+```

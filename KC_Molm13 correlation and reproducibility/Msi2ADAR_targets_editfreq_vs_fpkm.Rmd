@@ -1,0 +1,52 @@
+---
+title: "Plotting the gene targets of Msi2: FPKM vs editing frequency"
+output: html_document
+---
+
+Purpose: Do Msi2-ADAR gene targets with high gene expression have a higher editing frequency? If so, there would be a linear correlation between the two data.
+
+Methods: Plot the gene targets, FPKM vs editing frequency.
+
+Results: 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load data}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/Msi2ADAR_Supplemental/")
+
+molm13_snp_counts_dedupped_significant <- read.csv("data/molm13_snp_counts_dedupped_significant.csv")
+```
+
+Plot Yuheng's version to verify I have the right input file.
+
+```{r plot Yuheng's version}
+ggplot(data = molm13_snp_counts_dedupped_significant, aes(x = ADA.frequency, y = log2(ADA.fpkm+1))) + 
+  theme_bw() + #white plot background
+  geom_point(color='dodgerblue4', size=3) + 
+  geom_vline(xintercept=c(0.1), linetype="dotted", size=2) + 
+  geom_hline(yintercept=c(2.7), linetype="dotted", size=2) + 
+  theme(axis.text=element_text(size=30), axis.title.x = element_text(size=30), axis.title.y = element_text(size=30), 
+        panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5), 
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+```
+
+Flip the axis because this is what Kharas and Leslie want.
+
+Dotted lines mean what?
+
+```{r plot}
+save.path <- "/Users/chuk/Documents/MSI2-hyperTRIBE/Msi2ADAR_Supplemental/figures/"
+
+pdf(paste0(save.path, "MSI2ADAR_fpkm_vs_editfreq.pdf"), 15, 10, useDingbats = F )
+ggplot(data = molm13_snp_counts_dedupped_significant, aes(x = log2(ADA.fpkm+1), y = ADA.frequency)) + 
+  theme_bw() + #white plot background
+  geom_point(color='dodgerblue4', size=4) + 
+  xlab("\nlog2(ADA FPKM +1)") +
+  ylab("ADA frequency\n") +
+  theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), 
+        panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5), 
+        panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+dev.off()
+```
