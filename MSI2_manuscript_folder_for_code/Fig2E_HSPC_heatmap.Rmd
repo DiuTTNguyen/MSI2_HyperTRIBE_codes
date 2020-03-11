@@ -1,0 +1,693 @@
+---
+title: "LSC and LSK heatmap"
+author: "Karen Chu"
+date: "10/30/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(openxlsx)
+library(dplyr)
+library(pheatmap)
+library(dichromat)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(circlize)
+```
+
+Set working directory.
+
+```{r setwd}
+#folder <- "/Users/chuk/sshfs_mount/chuk/Fig3B_betabinomial_on_LSC_and_LSK_unique_targets/"
+folder <- "/Users/karen/mount/chuk/LT_vs_MPPs/"
+
+```
+
+Import SNP counts with ADAR, MIG, and DCD.
+
+```{r snp with adar mig dcd}
+setwd("/Users/karen/mount/chuk/LT_vs_MPPs/snp_counts/ADAR_MIG_DCD/")
+
+snp.adar.mig.dcd <- read.xlsx("Mouse_HSPC_snps_counts.xlsx")
+snp.adar.mig.dcd$genomic.coords <- paste(snp.adar.mig.dcd$seqnames, snp.adar.mig.dcd$start, 
+                                         snp.adar.mig.dcd$entrez.id, sep="_")
+```
+
+Import Yuheng's data.
+
+```{r yuheng}
+setwd("/Users/karen/mount/chuk/LT_vs_MPPs/generate_list_of_genes_for_heatmap/")
+#setwd("~/sshfs_mount/chuk/LT_vs_MPPs/generate_list_of_genes_for_heatmap/")
+lt.yuheng <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=1)
+st.yuheng <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=2)
+mpp2.yuheng <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=3)
+mpp4.yuheng <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=4)
+
+colnames(lt.yuheng) <- paste( colnames(lt.yuheng), "yuheng", sep=".")
+colnames(st.yuheng) <- paste( colnames(st.yuheng), "yuheng", sep=".")
+colnames(mpp2.yuheng) <- paste( colnames(mpp2.yuheng), "yuheng", sep=".")
+colnames(mpp4.yuheng) <- paste( colnames(mpp4.yuheng), "yuheng", sep=".")
+
+lt.yuheng$genomic.coords <- paste(lt.yuheng$chr, lt.yuheng$pos, lt.yuheng$entrez.id, sep="_")
+st.yuheng$genomic.coords <- paste(st.yuheng$chr, st.yuheng$pos, st.yuheng$entrez.id, sep="_")
+mpp2.yuheng$genomic.coords <- paste(mpp2.yuheng$chr, mpp2.yuheng$pos, mpp2.yuheng$entrez.id, sep="_")
+mpp4.yuheng$genomic.coords <- paste(mpp4.yuheng$chr, mpp4.yuheng$pos, mpp4.yuheng$entrez.id, sep="_")
+```
+
+
+```{r data}
+setwd(folder)
+
+lt <- read.csv("betabinom/Mouse_HSPC_LT-unique_vs_others_snp_counts_significance_fpkm.csv")
+st <- read.csv("betabinom/Mouse_HSPC_ST-unique_vs_others_snp_counts_significance_fpkm.csv")
+mpp2 <- read.csv("betabinom/Mouse_HSPC_MPP2-unique_vs_others_snp_counts_significance_fpkm.csv")
+mpp4 <- read.csv("betabinom/Mouse_HSPC_MPP4-unique_vs_others_snp_counts_significance_fpkm.csv")
+
+shared.lt.st <- read.csv("betabinom/Mouse_SHARED_LT_ST-unique_snp_counts_significance_fpkm.csv")
+shared.mpp2.mpp4 <- read.csv("betabinom/Mouse_SHARED_MPP2_MPP4-unique_snp_counts_significance_fpkm.csv")
+```
+
+Subset p-adj
+
+```{r padj}
+lt.filter <- subset(lt, p.adj < 0.1)
+st.filter <- subset(st, p.adj < 0.1)
+mpp2.filter <- subset(mpp2, p.adj < 0.1)
+mpp4.filter <- subset(mpp4, p.adj < 0.1)
+
+lt.filter$genomic.coords <- paste(lt.filter$seqnames, lt.filter$start, lt.filter$entrez.id, sep="_")
+st.filter$genomic.coords <- paste(st.filter$seqnames, st.filter$start, st.filter$entrez.id, sep="_")
+mpp2.filter$genomic.coords <- paste(mpp2.filter$seqnames, mpp2.filter$start, mpp2.filter$entrez.id, sep="_")
+mpp4.filter$genomic.coords <- paste(mpp4.filter$seqnames, mpp4.filter$start, mpp4.filter$entrez.id, sep="_")
+
+all.targets <- c(lt.filter$genomic.coords, st.filter$genomic.coords, mpp2.filter$genomic.coords, mpp4.filter$genomic.coords)
+```
+
+Calculate diff.frequency based on controls.
+
+```{r calculate diff.freq}
+# Obtain genomic.coords shared between SNP counts and target entrez id list
+snp.adar.mig.dcd <- snp.adar.mig.dcd [ snp.adar.mig.dcd$genomic.coords %in% all.targets,]
+snp.adar.mig.dcd_lt.index <- which( grepl("LT", colnames(snp.adar.mig.dcd)) )
+snp.adar.mig.dcd_st.index <- which( grepl("ST", colnames(snp.adar.mig.dcd)) )
+snp.adar.mig.dcd_mpp2.index <- which( grepl("MPP2", colnames(snp.adar.mig.dcd)) )
+snp.adar.mig.dcd_mpp4.index <- which( grepl("MPP4", colnames(snp.adar.mig.dcd)) )
+
+snp.adar.mig.dcd_LT <- cbind( genomic.coords=snp.adar.mig.dcd$genomic.coords, snp.adar.mig.dcd[,snp.adar.mig.dcd_lt.index] )
+snp.adar.mig.dcd_ST <- cbind( genomic.coords=snp.adar.mig.dcd$genomic.coords, snp.adar.mig.dcd[,snp.adar.mig.dcd_st.index] )
+snp.adar.mig.dcd_MPP2 <- cbind( genomic.coords=snp.adar.mig.dcd$genomic.coords, snp.adar.mig.dcd[,snp.adar.mig.dcd_mpp2.index] )
+snp.adar.mig.dcd_MPP4 <- cbind( genomic.coords=snp.adar.mig.dcd$genomic.coords, snp.adar.mig.dcd[,snp.adar.mig.dcd_mpp4.index] )
+
+# Calculate diff.frequency based on controls
+calculate.alt.freq <- function(df) {
+  
+  ref.counts <- df [ ,grepl("ref.count", colnames(df)) ]
+  alt.counts <- df [ ,grepl("alt.count", colnames(df)) ]
+  alt.freq <- alt.counts / (ref.counts + alt.counts)
+  
+  adar.index <- which( grepl("ADA", colnames(alt.freq)) )
+  controls.index <- which( grepl("DCD|MIG", colnames(alt.freq)) )
+  
+  diff.frequency = rowMeans(alt.freq[, adar.index ], na.rm=T) - rowMeans(alt.freq[, controls.index ],na.rm=T)
+  
+  return(diff.frequency)
+  
+}
+
+snp.adar.mig.dcd_LT$diff.frequency <- calculate.alt.freq(snp.adar.mig.dcd_LT)
+snp.adar.mig.dcd_ST$diff.frequency <- calculate.alt.freq(snp.adar.mig.dcd_ST)
+snp.adar.mig.dcd_MPP2$diff.frequency <- calculate.alt.freq(snp.adar.mig.dcd_MPP2)
+snp.adar.mig.dcd_MPP4$diff.frequency <- calculate.alt.freq(snp.adar.mig.dcd_MPP4)
+
+snp.adar.mig.dcd_LT$entrez.id <- snp.adar.mig.dcd$entrez.id
+snp.adar.mig.dcd_ST$entrez.id <- snp.adar.mig.dcd$entrez.id
+snp.adar.mig.dcd_MPP2$entrez.id <- snp.adar.mig.dcd$entrez.id
+snp.adar.mig.dcd_MPP4$entrez.id <- snp.adar.mig.dcd$entrez.id
+
+snp.adar.mig.dcd_LT$gene.symbol <- snp.adar.mig.dcd$gene.symbol
+snp.adar.mig.dcd_ST$gene.symbol <- snp.adar.mig.dcd$gene.symbol
+snp.adar.mig.dcd_MPP2$gene.symbol <- snp.adar.mig.dcd$gene.symbol
+snp.adar.mig.dcd_MPP4$gene.symbol <- snp.adar.mig.dcd$gene.symbol
+```
+
+
+Obtain the maximum diff.frequency for each gene.
+Heatmap input can have diff.frequency < 0.1 because an edit site can pass the diff.freq and p.adj threshold in Yuheng's data, but did not pass the p.adj threshold in the beta-binomial re-run. However, another edit site in that gene that does not pass the diff.freq filter in Yuheng's data, passes the p.adj filter in the beta-binomial re-run and is therefore called as the maximum diff.freq value for that gene.
+
+
+```{r max diff.freq}
+setwd(folder)
+
+max.diff.freq <- function(df) {
+  
+  # Convert NaN to zero or else it will be excluded from the final heatmap. Change to zero is for aesthetic reasons in heatmap.
+  df [ is.na(df) ] <- 0
+  
+  # Obtain maximum diff.frequency value of all entrez id
+  max.diff.freq <- df %>% dplyr::group_by(entrez.id) %>% filter(diff.frequency == max(diff.frequency))
+  max.diff.freq.df <- as.data.frame(max.diff.freq)
+  
+  # Remove duplicates that have equal diff.frequency values
+  max.diff.freq.df.final <- max.diff.freq.df [ !(duplicated(max.diff.freq.df$entrez.id)), ]
+  
+  return(max.diff.freq.df.final)
+  
+}
+
+lt.filter.max.diff.freq <- max.diff.freq(snp.adar.mig.dcd_LT)
+st.filter.max.diff.freq <- max.diff.freq(snp.adar.mig.dcd_ST)
+mpp2.filter.max.diff.freq <- max.diff.freq(snp.adar.mig.dcd_MPP2)
+mpp4.filter.max.diff.freq <- max.diff.freq(snp.adar.mig.dcd_MPP4)
+
+heatmap.input <- data.frame(LT.diff.freq=lt.filter.max.diff.freq$diff.frequency,
+                            ST.diff.freq=st.filter.max.diff.freq$diff.frequency,
+                            MPP2.diff.freq=mpp2.filter.max.diff.freq$diff.frequency,
+                            MPP4.diff.freq=mpp4.filter.max.diff.freq$diff.frequency,
+                            entrez.id=lt.filter.max.diff.freq$entrez.id,
+                            gene.symbol=lt.filter.max.diff.freq$gene.symbol)
+
+# write.csv(lt.filter.max.diff.freq, "betabinom/lt.filter.max.diff.freq_heatmap.input.csv")
+# write.csv(st.filter.max.diff.freq, "betabinom/st.filter.max.diff.freq_heatmap.input.csv")
+# write.csv(mpp2.filter.max.diff.freq, "betabinom/mpp2.filter.max.diff.freq_heatmap.input.csv")
+# write.csv(mpp4.filter.max.diff.freq, "betabinom/mpp4.filter.max.diff.freq_heatmap.input.csv")
+
+```
+
+Calculate edit frequency for each ADAR replicate at their max diff.freq edit site for each gene.
+
+#```{r calculate edit freq for each ADAR replicate}
+# Combine the unique targets into one vector
+hspc.combined <- rbind( lt.filter, st.filter,
+                    mpp2.filter, mpp4.filter )
+
+# Get SNP counts for edit site of each unique target
+df1 <- snp.adar.mig.dcd [ snp.adar.mig.dcd$genomic.coords %in% unique(hspc.combined$genomic.coords), ]
+
+ref.counts <- df1[,grep('ref.count', colnames(df1))]
+alt.counts <- df1[,grep('alt.count', colnames(df1))]
+
+alt.freq <- alt.counts / ( ref.counts + alt.counts )
+
+lt.adar.index <- which( grepl('ADA.*LT', colnames(alt.freq)) )
+st.adar.index <- which( grepl('ADA.*ST', colnames(alt.freq)) )
+mpp2.adar.index <- which( grepl('ADA.*MPP2', colnames(alt.freq)) )
+mpp4.adar.index <- which( grepl('ADA.*MPP4', colnames(alt.freq)) )
+
+lt.control.index <- which( grepl('DCD.*LT|MIG.*LT', colnames(alt.freq)) )
+st.control.index <- which( grepl('DCD.*ST|MIG.*ST', colnames(alt.freq)) )
+mpp2.control.index <- which( grepl('DCD.*MPP2|MIG.*MPP2', colnames(alt.freq)) )
+mpp4.control.index <- which( grepl('DCD.*MPP4|MIG.*MPP4', colnames(alt.freq)) )
+
+# df.stats <- data.frame( LT.a.diff.freq = alt.freq$`Sample_ADA1-LT_IGO_08500_B_20.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,lt.control.index]),
+#                         LT.b.diff.freq = alt.freq$`Sample_ADA2-LT_IGO_08500_B_24.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,lt.control.index]),
+#                         
+#                         ST.a.diff.freq = alt.freq$`Sample_ADA1-ST_IGO_08500_B_19.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,st.control.index]),
+#                         ST.b.diff.freq = alt.freq$`Sample_ADA2-ST_IGO_08500_B_23.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,st.control.index]),
+#                         
+#                         MPP2.a.diff.freq = alt.freq$`Sample_ADA1-MPP2_IGO_08500_B_17.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,mpp2.control.index]),
+#                         MPP2.b.diff.freq = alt.freq$`Sample_ADA2-MPP2_IGO_08500_B_21.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,mpp2.control.index]),
+#                         
+#                         MPP4.a.diff.freq = alt.freq$`Sample_ADA1-MPP4_IGO_08500_B_18.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,mpp4.control.index]),
+#                         MPP4.b.diff.freq = alt.freq$`Sample_ADA2-MPP4_IGO_08500_B_22.split.bam.alt.count` -
+#                           rowMeans(alt.freq[,mpp4.control.index]) )
+
+df.stats <- data.frame( LT.diff.freq = rowMeans(alt.freq[,lt.adar.index]) -
+                          rowMeans(alt.freq[,lt.control.index]),
+                        
+                        ST.diff.freq = rowMeans(alt.freq[,st.adar.index]) -
+                          rowMeans(alt.freq[,st.control.index]),
+                        
+                        MPP2.diff.freq = rowMeans(alt.freq[,mpp2.adar.index]) -
+                          rowMeans(alt.freq[,mpp2.control.index]),
+                        
+                        MPP4.diff.freq = rowMeans(alt.freq[,mpp4.adar.index]) -
+                          rowMeans(alt.freq[,mpp4.control.index]) )
+
+df.stats$genomic.coords <- hspc.combined$genomic.coords
+df.stats [ is.na(df.stats) ] <- 0
+df.stats.melt <- melt(df.stats)
+df.stats.melt.max <- df.stats.melt %>% group_by(genomic.coords) %>% filter(value == max(value))
+df.stats.melt.max.df <- as.data.frame(df.stats.melt.max)
+
+
+
+
+
+max.diff.freq.df <- as.data.frame(max.diff.freq)
+
+
+
+df.stats$entrez.id <- df1$entrez.id
+df.stats$gene.symbol <- df1$gene.symbol
+heatmap.input <- df.stats
+
+
+
+
+# # Get ref and alt counts
+# lt.unique.ref.counts <- lt.filter.max.diff.freq [ , grepl("ADA.*ref.count",
+#                                                             colnames(lt.filter.max.diff.freq))]
+# lt.unique.alt.counts <- lt.filter.max.diff.freq [ , grepl("ADA.*alt.count",
+#                                                             colnames(lt.filter.max.diff.freq))]
+# 
+# st.unique.ref.counts <- st.filter.max.diff.freq [ , grepl("ADA.*ref.count",
+#                                                             colnames(st.filter.max.diff.freq))]
+# st.unique.alt.counts <- st.filter.max.diff.freq [ , grepl("ADA.*alt.count",
+#                                                             colnames(st.filter.max.diff.freq))]
+# 
+# mpp2.unique.ref.counts <- mpp2.filter.max.diff.freq [ , grepl("ADA.*ref.count",
+#                                                             colnames(mpp2.filter.max.diff.freq))]
+# mpp2.unique.alt.counts <- mpp2.filter.max.diff.freq [ , grepl("ADA.*alt.count",
+#                                                             colnames(mpp2.filter.max.diff.freq))]
+# 
+# mpp4.unique.ref.counts <- mpp4.filter.max.diff.freq [ , grepl("ADA.*ref.count",
+#                                                             colnames(mpp4.filter.max.diff.freq))]
+# mpp4.unique.alt.counts <- mpp4.filter.max.diff.freq [ , grepl("ADA.*alt.count",
+#                                                             colnames(mpp4.filter.max.diff.freq))]
+# 
+# # Calculate edit freq
+# lt.heatmap.input <- lt.unique.alt.counts / ( lt.unique.ref.counts + lt.unique.alt.counts )
+# lt.heatmap.input$entrez.id <- lt.filter.max.diff.freq$entrez.id
+# 
+# st.heatmap.input <- st.unique.alt.counts / ( st.unique.ref.counts + st.unique.alt.counts )
+# st.heatmap.input$entrez.id <- st.filter.max.diff.freq$entrez.id
+# 
+# mpp2.heatmap.input <- mpp2.unique.alt.counts / ( mpp2.unique.ref.counts + mpp2.unique.alt.counts )
+# mpp2.heatmap.input$entrez.id <- mpp2.filter.max.diff.freq$entrez.id
+# 
+# mpp4.heatmap.input <- mpp4.unique.alt.counts / ( mpp4.unique.ref.counts + mpp4.unique.alt.counts )
+# mpp4.heatmap.input$entrez.id <- mpp4.filter.max.diff.freq$entrez.id
+# 
+# heatmap.input <- rbind( lt.heatmap.input, st.heatmap.input, mpp2.heatmap.input, mpp4.heatmap.input )
+# 
+# # Change column names to better names
+# gene.x.colnames <- strsplit(colnames(heatmap.input), "_08500")
+# gene.x.colnames.final <- sapply(gene.x.colnames, "[[", 1)
+# colnames(heatmap.input) <- gene.x.colnames.final
+
+heatmap.input [ is.na(heatmap.input) ] <- 0 # because some have 0 / 0 + 0 which results in NA
+#```
+
+
+Prepare number of edit sites per gene in LSC and LSK.
+Filter by diff.freq > 0.1 and call all those that pass the threshold as an edit site...
+
+#```{r edit sites heatmap}
+# Get alt and ref counts
+lsc.filter.ref.counts <- lsc.filter [ , grepl("ADA.*ref.count", colnames(lsc.filter))]
+lsc.filter.alt.counts <- lsc.filter [ , grepl("ADA.*alt.count", colnames(lsc.filter))]
+
+lsk.filter.ref.counts <- lsk.filter [ , grepl("ADA.*ref.count", colnames(lsk.filter))]
+lsk.filter.alt.counts <- lsk.filter [ , grepl("ADA.*alt.count", colnames(lsk.filter))]
+
+shared.filter.ref.counts <- shared.filter [ , grepl("ADA.*ref.count", colnames(shared.filter))]
+shared.filter.alt.counts <- shared.filter [ , grepl("ADA.*alt.count", colnames(shared.filter))]
+
+# Calcuate edit frequency
+lsc.edit.freq.for.edit.sites <- lsc.filter.alt.counts / ( lsc.filter.alt.counts + lsc.filter.ref.counts )
+lsk.edit.freq.for.edit.sites <- lsk.filter.alt.counts / ( lsk.filter.alt.counts + lsk.filter.ref.counts )
+shared.edit.freq.for.edit.sites <- shared.filter.alt.counts / ( shared.filter.alt.counts + shared.filter.ref.counts )
+
+# Replace values < 0.1 with NA and then add entrez.id column
+lsc.edit.freq.for.edit.sites [ lsc.edit.freq.for.edit.sites < 0.1 ] <- "NA"
+lsk.edit.freq.for.edit.sites [ lsk.edit.freq.for.edit.sites < 0.1 ] <- "NA"
+shared.edit.freq.for.edit.sites [ shared.edit.freq.for.edit.sites < 0.1 ] <- "NA"
+
+lsc.edit.freq.for.edit.sites$entrez.id <- lsc.filter$entrez.id
+lsk.edit.freq.for.edit.sites$entrez.id <- lsk.filter$entrez.id
+shared.edit.freq.for.edit.sites$entrez.id <- shared.filter$entrez.id
+
+edit.sites.combined <- rbind( lsc.edit.freq.for.edit.sites,
+                              lsk.edit.freq.for.edit.sites,
+                              shared.edit.freq.for.edit.sites )
+
+# Column names
+gene.x.colnames <- strsplit(colnames(edit.sites.combined), "_08334")
+gene.x.colnames.final <- sapply(gene.x.colnames, "[[", 1)
+colnames(edit.sites.combined) <- gene.x.colnames.final
+
+# Count the number of edit sites per entrez.id
+remove.na.and.count <- function(df, index.num) {
+  
+  df.subset <- data.frame( diff.freq = df[,index.num],
+                           entrez.id = df$entrez.id )
+  df.subset.remove.na <- df.subset [ df.subset$diff.freq != "NA", ]
+  df.table <- table(df.subset.remove.na$entrez.id)
+  
+  df.table.df <- as.data.frame(df.table)
+  colnames(df.table.df) <- c("entrez.id", colnames(df)[index.num])
+  
+  return(df.table.df)
+  
+}
+
+lsc.sample.a.edit.sites <- remove.na.and.count(edit.sites.combined, 1)
+lsk.sample.a.edit.sites <- remove.na.and.count(edit.sites.combined, 2)
+lsc.sample.b.edit.sites <- remove.na.and.count(edit.sites.combined, 3)
+lsk.sample.b.edit.sites <- remove.na.and.count(edit.sites.combined, 4)
+lsc.sample.c.edit.sites <- remove.na.and.count(edit.sites.combined, 5)
+lsk.sample.c.edit.sites <- remove.na.and.count(edit.sites.combined, 6)
+
+edit.sites.final <- merge(lsc.sample.a.edit.sites, lsc.sample.b.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsc.sample.c.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsk.sample.a.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsk.sample.b.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsk.sample.c.edit.sites, by="entrez.id", all = TRUE)
+
+edit.sites.final [ is.na(edit.sites.final) ] <- 0
+
+# Rearrange columns
+edit.sites.final <- edit.sites.final %>% select(c("Sample_ADA.A_IGO",
+                                                  "Sample_ADA.B_IGO",
+                                                  "Sample_ADA.C_IGO",
+                                                  "Sample_ADA.A.DsRed_IGO",
+                                                  "Sample_ADA.B.DsRed_IGO",
+                                                  "Sample_ADA.C.DsRed_IGO",
+                                                  "entrez.id"))
+#```
+
+Import VST gene expression reads
+
+```{r vst}
+setwd(folder)
+# Import scaled VST read counts
+reads <- read.csv("snp_counts/ADAR_MIG_DCD/reads.vst.csv")
+colnames(reads)[1] <- "entrez.id"
+reads.subset <- reads[ reads$entrez.id %in% heatmap.input$entrez.id, ]
+rownames(reads.subset) <- reads.subset$entrez.id
+
+gene.x.colnames <- strsplit(colnames(reads.subset), "_0500")
+gene.x.colnames.final <- sapply(gene.x.colnames, "[[", 1)
+colnames(reads.subset) <- gene.x.colnames.final
+
+# Subset VST counts to only include ADAR and MIG
+lt.adar.index <- which( grepl("ADA.*LT", colnames(reads.subset)))
+lt.mig.index <- which( grepl("MIG.*LT", colnames(reads.subset)))
+
+st.adar.index <- which( grepl("ADA.*ST", colnames(reads.subset)))
+st.mig.index <- which( grepl("MIG.*ST", colnames(reads.subset)))
+
+mpp2.adar.index <- which( grepl("ADA.*MPP2", colnames(reads.subset)))
+mpp2.mig.index <- which( grepl("MIG.*MPP2", colnames(reads.subset)))
+
+mpp4.adar.index <- which( grepl("ADA.*MPP4", colnames(reads.subset)))
+mpp4.mig.index <- which( grepl("MIG.*MPP4", colnames(reads.subset)))
+
+
+reads.subset.mig <- reads.subset[, c(lt.mig.index, st.mig.index, mpp2.mig.index, mpp4.mig.index)]
+reads.subset.adar <- reads.subset[, c(lt.adar.index, st.adar.index, mpp2.adar.index, mpp4.adar.index)]
+
+reads.subset.mig.adar <- data.frame( LT.MIG=apply(reads.subset.mig[,1:2], 1, mean),
+                                     ST.MIG=reads.subset.mig[,3],
+                                     MPP2.MIG=apply(reads.subset.mig[,4:5], 1, mean),
+                                     MPP4.MIG=apply(reads.subset.mig[,6:7], 1, mean),
+                                     
+                                     LT.ADA=apply(reads.subset.adar[,1:2], 1, mean),
+                                     ST.ADA=apply(reads.subset.adar[,3:4], 1, mean),
+                                     MPP2.ADA=apply(reads.subset.adar[,5:6], 1, mean),
+                                     MPP4.ADA=apply(reads.subset.adar[,7:8], 1, mean) )
+
+# z-transform
+# scale is generic function whose default method centers and/or scales the columns of a numeric matrix.
+# 11/15/2019: I checked and this is the correct command for z-transformation
+# reads.subset.mig.adar.z.transform <- t( scale(t(reads.subset.mig.adar)) )
+# reads.subset.mig.adar.z.transform <- as.data.frame(reads.subset.mig.adar.z.transform)
+# reads.subset.mig.adar.z.transform$entrez.id <- rownames(reads.subset.mig.adar)
+
+# z-transform MIG and ADAR separately to make it look more even in the heatmap.
+# MIG was looking like it was having the most gene expression out of everything.
+mig.subset <- reads.subset.mig.adar [ ,grepl("MIG", colnames(reads.subset.mig.adar)) ]
+reads.subset.mig.z.transform <- t( scale(t(mig.subset)) )
+reads.subset.mig.z.transform <- as.data.frame(reads.subset.mig.z.transform)
+reads.subset.mig.z.transform$entrez.id <- rownames(reads.subset.mig)
+
+ada.subset <- reads.subset.mig.adar [ ,grepl("ADA", colnames(reads.subset.mig.adar)) ]
+reads.subset.ada.z.transform <- t( scale(t(ada.subset)) )
+reads.subset.ada.z.transform <- as.data.frame(reads.subset.ada.z.transform)
+reads.subset.ada.z.transform$entrez.id <- rownames(reads.subset.adar)
+
+
+```
+
+
+Merge data into one dataframe, set rownames, and then split. Required to get ComplexHeatmap to plot matching rows. It won't match the rows properly if you plot 2 heatmaps but assigned the rownames separately.
+
+```{r merge and split}
+# Need to merge them into one dataframe so ComplexHeatmap can order the rows appropriately
+#heatmap.combined.final <- merge(heatmap.input, reads.subset.mig.adar.z.transform, by="entrez.id", all = TRUE)
+
+heatmap.combined.mig <- merge(heatmap.input, reads.subset.mig.z.transform, by="entrez.id", all=TRUE)
+heatmap.combined.final <- merge(heatmap.combined.mig, reads.subset.ada.z.transform, by="entrez.id", all=TRUE)
+rownames(heatmap.combined.final) <- heatmap.combined.final$gene.symbol
+
+# Get diff.freq for heatmap
+heatmap.diff.freq.input <- heatmap.combined.final [ ,grepl("diff.freq", colnames(heatmap.combined.final))]
+
+# Get gene expression for heatmap
+heatmap.gene.expression.input.mig <- heatmap.combined.final %>% dplyr::select(c("LT.MIG", "ST.MIG", "MPP2.MIG", "MPP4.MIG"))
+
+heatmap.gene.expression.input.ada <- heatmap.combined.final %>% dplyr::select(c("LT.ADA", "ST.ADA", "MPP2.ADA", "MPP4.ADA"))
+```
+
+
+Looks like there is a giant black bar across edit site heatmap. Are all NA really removed?
+Try clustering method to cluster the reds together.
+
+Average: Average of all pairwise distances.
+
+McQuitty (WPGMA; “Weighted Pair Group Method Using Arithmetic Averages”) – A mathematically simpler form of the Average Linkage method that results in the most recent additions to a cluster having more weight in the distance calculations than do earlier additions.
+
+The Single-linkage, Complete-linkage, Average-linkage, and McQuitty methods are graph-based and evaluate distances to neighbors to form clusters. The Centroid, Median, and Ward methods are geometry-based and are influenced by the sizes and shapes of the clusters as they form. The graph-based methods are somewhat more general; the geometry-based methods are most compatible with data that can be interpreted reasonably as being geometric.
+
+```{r plot heatmap}
+setwd(folder)
+
+# Obtain min and max values for gene expression to set same color scale in Heatmap
+heatmap.gene.expression.input <- heatmap.combined.final %>% dplyr::select(c("LT.MIG", "ST.MIG", "MPP2.MIG", "MPP4.MIG",
+                                                                                "LT.ADA", "ST.ADA", "MPP2.ADA", "MPP4.ADA"))
+gene.x.min <- min(heatmap.gene.expression.input)
+gene.x.max <- max(heatmap.gene.expression.input)
+gene.x.middle <- ( gene.x.max + gene.x.min ) / 2
+
+library(ComplexHeatmap)
+
+png("betabinom/hspc_unique_targets_heatmap_with_gene_symbols_with_diff.freq_no_replicates_shown_manual_order_and_colors.png", 1000, 800)
+Heatmap(heatmap.diff.freq.input,
+        #clustering_distance_rows = "minkowski",
+        clustering_method_rows = "centroid",
+        #col=colorRamp2(c(min(heatmap.diff.freq.input), 0.1, max(heatmap.diff.freq.input)),
+        #              c("blue", "white", "red")),
+        #cluster_rows = FALSE,
+        col=colorRamp2(c(-0.2, 0.1, 0.2),
+                      c("blue", "white", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression.input.mig,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts MIG",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression.input.ada,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts ADA",
+          show_row_names = TRUE,
+          cluster_columns = FALSE) 
+
+# Add borders
+decorate_heatmap_body("Editing Frequency", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("Z-transformed VST read counts MIG", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("Z-transformed VST read counts ADA", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+dev.off()
+```
+
+
+Obtain cluster order.
+
+```{r obtain order}
+h1 <- Heatmap(heatmap.diff.freq.input,
+        #clustering_distance_rows = "minkowski",
+        clustering_method_rows = "centroid",
+        #col=colorRamp2(c(min(heatmap.diff.freq.input), 0.1, max(heatmap.diff.freq.input)),
+        #              c("blue", "white", "red")),
+        #cluster_rows = FALSE,
+        col=colorRamp2(c(-0.2, 0.1, 0.2),
+                      c("blue", "white", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression.input.mig,
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts MIG",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression.input.ada,
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts ADA",
+          show_row_names = TRUE,
+          cluster_columns = FALSE) 
+
+row.order <- row_order(h1)
+
+# Manually re-order cluster.
+heatmap.diff.freq.input.cluster.order <- heatmap.diff.freq.input[row.order[[1]],]
+
+lt.order <- heatmap.diff.freq.input.cluster.order[1:21,]
+lt.reorder <- lt.order[ rev(order(lt.order$LT.diff.freq)), ]
+
+st.order <- heatmap.diff.freq.input.cluster.order[22:33,]
+st.reorder <- st.order[ rev(order(st.order$ST.diff.freq)), ]
+
+mpp2.order <- heatmap.diff.freq.input.cluster.order[34:48,]
+mpp2.reorder <- mpp2.order[ rev(order(mpp2.order$MPP2.diff.freq)), ]
+
+mpp4.order <- heatmap.diff.freq.input.cluster.order[49:61,]
+mpp4.reorder <- mpp4.order[ rev(order(mpp4.order$MPP4.diff.freq)), ]
+
+heatmap.diff.freq.input.reorder <- rbind( lt.reorder,
+                                          st.reorder,
+                                          mpp2.reorder,
+                                          mpp4.reorder )
+gene.order <- rownames(heatmap.diff.freq.input.reorder)
+heatmap.combined.final.order <- heatmap.combined.final[ match(gene.order, heatmap.combined.final$gene.symbol), ]
+
+# Get diff.freq for heatmap
+heatmap.diff.freq.input <- heatmap.combined.final.order [ ,grepl("diff.freq", colnames(heatmap.combined.final.order))]
+
+# Get gene expression for heatmap
+heatmap.gene.expression.input.mig <- heatmap.combined.final.order %>% dplyr::select(c("LT.MIG", "ST.MIG", "MPP2.MIG", "MPP4.MIG"))
+
+heatmap.gene.expression.input.ada <- heatmap.combined.final.order %>% dplyr::select(c("LT.ADA", "ST.ADA", "MPP2.ADA", "MPP4.ADA"))
+
+# Plot
+setwd(folder)
+
+# Obtain min and max values for gene expression to set same color scale in Heatmap
+heatmap.gene.expression.input <- heatmap.combined.final %>% dplyr::select(c("LT.MIG", "ST.MIG", "MPP2.MIG", "MPP4.MIG",
+                                                                                "LT.ADA", "ST.ADA", "MPP2.ADA", "MPP4.ADA"))
+gene.x.min <- min(heatmap.gene.expression.input)
+gene.x.max <- max(heatmap.gene.expression.input)
+gene.x.middle <- ( gene.x.max + gene.x.min ) / 2
+
+png("betabinom/hspc_unique_targets_heatmap_with_gene_symbols_with_diff.freq_no_replicates_shown_manual_order_and_colors.png", 1000, 800)
+Heatmap(heatmap.diff.freq.input,
+        #clustering_distance_rows = "minkowski",
+        #clustering_method_rows = "centroid",
+        #col=colorRamp2(c(min(heatmap.diff.freq.input), 0.1, max(heatmap.diff.freq.input)),
+        #              c("blue", "white", "red")),
+        cluster_rows = FALSE,
+        col=colorRamp2(c(-0.1, 0.1, 0.2),
+                      c("blue", "white", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression.input.mig,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          # col=colorRamp2(c(-2, 0, 2),
+          #                c("blue", "white", "red")),
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts MIG",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression.input.ada,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          # col=colorRamp2(c(-2, 0, 2),
+          #                c("blue", "white", "red")),
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts ADA",
+          show_row_names = TRUE,
+          cluster_columns = FALSE) 
+
+# Add borders
+decorate_heatmap_body("Editing Frequency", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("Z-transformed VST read counts MIG", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("Z-transformed VST read counts ADA", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+dev.off()
+```
+
+Default for ComplexHeatmap seems to be complete linkage clustering.
+
+Complete linkage clustering: Find the maximum possible distance between points belonging to two different clusters.
+
+Single linkage clustering: Find the minimum possible distance between points belonging to two different clusters.
+
+Mean linkage clustering: Find all possible pairwise distances for points belonging to two different clusters and then calculate the average.
+
+Centroid linkage clustering: Find the centroid of each cluster and calculate the distance between centroids of two clusters.
+
+####
+Single linkage (nearest neighbor) – The distance between clusters is taken as the shortest distance between any point in one cluster and any point in the second. This produces arbitrarily-shaped clusters but is prone to chaining, where observations are successively added to a single cluster.
+
+Complete linkage (farthest neighbor) – The opposite of the single linkage: the distance between clusters is taken as the greatest distance between any point in one cluster and any point in the second. This tends to produce globular clusters.
+
+Average linkage (UPGMA; “Unweighted Pair Group Method Using Arithmetic Averages”) – The distance between the clusters is taken as the average of all Euclidean distances between the points in one cluster and the points in the second.
+
+McQuitty (WPGMA; “Weighted Pair Group Method Using Arithmetic Averages”) – A mathematically simpler form of the Average Linkage method that results in the most recent additions to a cluster having more weight in the distance calculations than do earlier additions.
+
+Centroid (UPGMC; “Unweighted Pair Group Method Using Centroids”) – The distance between clusters is taken to be the distance between the centroid of all of the observations in each cluster. This can give poor results if clusters of very different sizes are merged. As implemented in R, the centroid method uses the squares of the distances between observations as input.
+
+Median (WPGMC; “Weighted Pair Group Method Using Centroids”) – A modification of the centroid method that mitigates the problem created by merging clusters of very different sizes. The median method also uses the squares of the distances as input.
+
+Ward – Instead of trying to calculate distance between clusters, the Ward methods attempt to maximize the homogeneity (minimize the variance) within each cluster. Two variants of the method are implemented in R, one using the distance (Ward-D), the other using the square of the distance (Ward-D2) between observations to determine cluster memberships. Ward’s methods produce globular clusters and have a strong bias for putting similar numbers of observations in each cluster.
+
+The Single-linkage, Complete-linkage, Average-linkage, and McQuitty methods are graph-based and evaluate distances to neighbors to form clusters. The Centroid, Median, and Ward methods are geometry-based and are influenced by the sizes and shapes of the clusters as they form. The graph-based methods are somewhat more general; the geometry-based methods are most compatible with data that can be interpreted reasonably as being geometric.
+
+
+
+
+
+
+
+

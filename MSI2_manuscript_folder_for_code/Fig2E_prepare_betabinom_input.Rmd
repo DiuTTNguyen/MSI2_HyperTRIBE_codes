@@ -1,0 +1,121 @@
+---
+title: "Prepare betabinom input"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r library}
+library(openxlsx)
+```
+
+Set working directory
+
+```{r setwd}
+folder <- "/Users/karen/mount/chuk/LT_vs_MPPs/"
+#folder <- "/Users/chuk/sshfs_mount/chuk/LT_vs_MPPs/"
+```
+
+Import data.
+
+Statistically significant edit sites were filtered for fpkm >= 5 and diff.freq >= 0.1, and the maximum diff.frequency in each cell type for those genes were put into a table called "HSPC_fpkm_greaterthan_5_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values.csv". All the other files are just subsets of this one for LT, ST, MPP2, or MPP4-unique genes with a threshold of diff.freq >= 0.1 for the cell type of interest and diff.freq = 0 for all other cell types.
+
+```{r import}
+setwd(folder)
+
+lt <- read.csv("generate_list_of_genes_for_heatmap/HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_LT-UNIQUE.csv")
+st <- read.csv("generate_list_of_genes_for_heatmap/HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_ST-UNIQUE.csv")
+mpp2 <- read.csv("generate_list_of_genes_for_heatmap/HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_MPP2-UNIQUE.csv")
+mpp4 <- read.csv("generate_list_of_genes_for_heatmap/HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_MPP4-UNIQUE.csv")
+```
+
+Import SNP count data.
+
+```{r snp}
+setwd(folder)
+
+snp.counts <- read.xlsx("snp_counts/Mouse_HSPC_snps_count.xlsx")
+snp.counts <- subset(snp.counts, dbsnp=="")
+```
+
+Venn diagram of overlapping genes in cell-type-unique lists.
+
+```{r venn diagram}
+setwd(paste0(folder, "prepare_betabinom_input/"))
+
+library("VennDiagram")
+
+vd <- venn.diagram(
+  x = list(
+    "LT-unique genes" = unique(lt$gene.symbol),
+    "ST-unique genes" = unique(st$gene.symbol),
+    "MPP2-unique genes" = unique(mpp2$gene.symbol),
+    "MPP4-unique genes" = unique(mpp4$gene.symbol)
+  ),
+  filename = NULL,
+  col = "transparent",
+  fill = c("red", "blue", "yellow", "green"),
+  alpha = 0.50,
+  cex = 3,
+  cat.cex = 1.5
+)
+
+library(grDevices)
+
+png(file="cell-type_specific_genes_venn.diagram.png", 800, 800 )
+par(mar=c(5,5,5,5))
+grid.draw(vd)
+dev.off()
+
+```
+
+
+Obtain read counts for edit sites that appear in the cell-type-unique lists.
+
+```{r obtain counts}
+lt.counts <- snp.counts [ snp.counts$gene.symbol %in% lt$gene.symbol, ]
+st.counts <- snp.counts [ snp.counts$gene.symbol %in% st$gene.symbol, ]
+mpp2.counts <- snp.counts [ snp.counts$gene.symbol %in% mpp2$gene.symbol, ]
+mpp4.counts <- snp.counts [ snp.counts$gene.symbol %in% mpp4$gene.symbol, ]
+
+setwd(paste0(folder, "prepare_betabinom_input/"))
+
+write.csv(lt.counts, "Mouse_HSPC_LT-unique_betabinom_input.csv")
+write.csv(st.counts, "Mouse_HSPC_ST-unique_betabinom_input.csv")
+write.csv(mpp2.counts, "Mouse_HSPC_MPP2-unique_betabinom_input.csv")
+write.csv(mpp4.counts, "Mouse_HSPC_MPP4-unique_betabinom_input.csv")
+```
+
+Shared LT ST
+Shared MPP2 MPP4
+
+```{r shared cells}
+setwd(paste0(folder, "prepare_betabinom_input/"))
+
+shared.lt.st <- rbind(lt.counts, st.counts)
+shared.mpp2.mpp4 <- rbind(mpp2.counts, mpp4.counts)
+
+write.csv(shared.lt.st, "Mouse_HSPC_SHARED_LT_ST-unique_betabinom_input.csv")
+write.csv(shared.mpp2.mpp4, "Mouse_HSPC_SHARED_MPP2_MPP4-unique_betabinom_input.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

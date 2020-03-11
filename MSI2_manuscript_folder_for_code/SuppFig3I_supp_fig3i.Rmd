@@ -1,0 +1,213 @@
+---
+title: "Supp Fig3I GeneExpression Independent"
+author: "Karen Chu"
+date: "12/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(openxlsx)
+```
+
+Set working directory.
+
+```{r set wd}
+folder <- "/Users/karen/mount/chuk/Fig3B_betabinomial_on_LSC_and_LSK_unique_targets/Supp_Fig3I_GeneExpression_independent/"
+```
+
+Import data.
+
+```{r import}
+setwd(folder)
+
+heatmap.combined.final <- read.csv("../heatmap_combined.final.csv")
+
+genex <- read.csv("../deseq2/LSC_ADA_vs_LSK_ADA_DESeq2Results.csv")
+```
+
+Which pass filters
+p.adj >= 0.05 or p.adj < 0.05 & log2FC < 0.263 (aka FC < 1.2)
+
+```{r filters}
+setwd(folder)
+
+first.filter.index <- which( genex$padj >= 0.05 )
+second.filter.index <- which( genex$padj < 0.05 & genex$log2FoldChange < 0.263 )
+filter.index <- unique( c(first.filter.index, second.filter.index) ) # combine indices of both filters
+genex.independent.genes <- genex[filter.index, ] # obtain data for GE independent genes
+
+genex.independent.genes.heatmap <- heatmap.combined.final [ heatmap.combined.final$entrez.id %in% genex.independent.genes$entrez.id, ] # subset heatmap for GE independent
+
+write.csv(genex.independent.genes.heatmap, "genex.independent.genes.heatmap.csv", row.names = FALSE)
+```
+
+Prepare dataframe for heatmap.
+
+```{r prep}
+heatmap.combined.final <- genex.independent.genes.heatmap
+
+# Get diff.freq for heatmap
+heatmap.diff.freq.input <- heatmap.combined.final [ ,grepl("max.diff.freq", colnames(heatmap.combined.final))]
+
+# Get edit sites
+heatmap.edit.sites <- heatmap.combined.final [ ,grepl("edit.sites", colnames(heatmap.combined.final))]
+heatmap.edit.sites [ is.na(heatmap.edit.sites) ] <- 0
+  
+# Get gene expression for heatmap
+heatmap.gene.expression <- heatmap.combined.final [ ,grepl("MIG|ADA", colnames(heatmap.combined.final))]
+```
+
+Plot heatmap.
+
+```{r heatmap}
+setwd(folder)
+
+library(ComplexHeatmap)
+
+png("LSC_LSK_diff.freq_greaterthanorequalto_0.6_heatmap_GE_independent.png", 1000, 800)
+Heatmap(heatmap.diff.freq.input,
+        clustering_method_rows = "centroid",
+        col=colorRamp2(c(min(heatmap.diff.freq.input), 0.1, max(heatmap.diff.freq.input)), c("blue", "white", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_columns = FALSE) +
+  Heatmap(log2(heatmap.edit.sites+1),
+          column_title = "Edit Sites",
+          name="log2( Edit Sites +1)",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression,
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) 
+
+# Add borders
+decorate_heatmap_body("Editing Frequency", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("log2( Edit Sites +1)", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("Z-transformed VST read counts", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+dev.off()
+```
+
+Manual reorder
+
+```{r obtain order}
+# We want to flip the dark red at the bottom to be at the top in LSK
+
+h1 <- Heatmap(heatmap.diff.freq.input,
+        clustering_method_rows = "centroid",
+        col=colorRamp2(c(min(heatmap.diff.freq.input), 0.1, max(heatmap.diff.freq.input)), c("blue", "white", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_columns = FALSE) +
+  Heatmap(log2(heatmap.edit.sites+1),
+          column_title = "Edit Sites",
+          name="log2( Edit Sites +1)",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression,
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) 
+
+row.order <- row_order(h1)
+row.order <- row.order[[1]]
+heatmap.combined.final.order <- heatmap.combined.final[row.order,]
+plot(heatmap.combined.final.order$LSK.A.max.diff.freq) # plot to see where the diff.freq dips
+index.of.interest <- which(heatmap.combined.final.order$entrez.id==252875)
+
+# Reverse order of the dark red to put it at the top
+row.order.new <- c( rev(row.order[1:index.of.interest]), row.order[index.of.interest+1:length(row.order)] )
+row.order.new <- row.order.new [ !(is.na(row.order.new)) ]
+heatmap.combined.final.reorder <- heatmap.combined.final[row.order.new,]
+```
+
+Plot heatmap.
+
+```{r heatmap prep and plot}
+# Prepare for heatmap
+heatmap.combined.final <- heatmap.combined.final.reorder
+
+# Get diff.freq for heatmap
+heatmap.diff.freq.input <- heatmap.combined.final [ ,grepl("max.diff.freq", colnames(heatmap.combined.final))]
+
+# Get edit sites
+heatmap.edit.sites <- heatmap.combined.final [ ,grepl("edit.sites", colnames(heatmap.combined.final))]
+heatmap.edit.sites [ is.na(heatmap.edit.sites) ] <- 0
+  
+# Get gene expression for heatmap
+heatmap.gene.expression <- heatmap.combined.final [ ,grepl("MIG|ADA", colnames(heatmap.combined.final))]
+
+# Plot heatmap
+setwd(folder)
+
+png("LSC_LSK_diff.freq_greaterthanorequalto_0.6_heatmap_GE_independent_manual_reorder.png", 1000, 800)
+Heatmap(heatmap.diff.freq.input,
+        col=colorRamp2(c(min(heatmap.diff.freq.input), 0.1, max(heatmap.diff.freq.input)), c("blue", "white", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_rows = FALSE,
+        cluster_columns = FALSE) +
+  Heatmap(log2(heatmap.edit.sites+1),
+          column_title = "Edit Sites",
+          name="log2( Edit Sites +1)",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression,
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) 
+
+# Add borders
+decorate_heatmap_body("Editing Frequency", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("log2( Edit Sites +1)", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("Z-transformed VST read counts", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+dev.off()
+```
+
+
+
+
+
+

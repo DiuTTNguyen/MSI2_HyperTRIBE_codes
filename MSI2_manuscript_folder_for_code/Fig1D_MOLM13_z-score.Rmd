@@ -1,0 +1,254 @@
+---
+title: "Fig1D MOLM13"
+author: "Karen Chu"
+date: "1/8/2020"
+output: html_document
+---
+
+Reviewer said length may be why there are more edit sites in 3'UTR. 
+Normalize length somehow.
+
+Christina says to do binomial z-score to test if the editing frequency in 3'UTR is different from CDS.
+http://www.cogsci.ucsd.edu/~dgroppe/STATZ/binomial_ztest.pdf
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r library}
+library(openxlsx)
+library(biomaRt)
+library(stringr)
+library(dplyr)
+library(ggplot2)
+```
+
+Work dir.
+
+```{r work dir}
+work.dir <- "~/mount/chuk/Fig1D_MOLM13/"
+output.dir <- "~/mount/chuk/Fig1D_MOLM13/output/"
+figures.dir <- "~/mount/chuk/Fig1D_MOLM13/figures/"
+```
+
+Import data.
+Already filtered for padj < 0.05
+
+```{r data}
+molm13 <- read.xlsx("~/mount/chuk/data_resources/molm13_snp_counts_dedupped_significant.xlsx")
+
+molm.filter <- molm13 [ molm13$diff.frequency >= 0.1 &
+                          molm13$ADA.fpkm >= 5 &
+                          molm13$DCD.fpkm >= 5 &
+                          molm13$MIG.fpkm >= 5, ]
+```
+
+
+Obtain number of A in 5'UTR.
+
+```{r five utr}
+setwd(output.dir)
+
+# ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+# 
+# results.five.utr <- getBM(attributes = c('entrezgene_id',
+#                                  '5utr'),
+#                   filters = 'entrezgene_id',
+#                   values = unique(molm.filter$entrez.id),
+#                   mart = ensembl)
+# 
+# write.csv(results.five.utr, "MOLM13_HyperTRIBE_5UTR_sequences.csv", row.names = FALSE)
+
+results.five.utr <- read.csv("MOLM13_HyperTRIBE_5UTR_sequences.csv")
+```
+
+Will result in multiple CDS called for one gene.
+
+Obtain number of A in CDS.
+
+```{r a cds}
+setwd(output.dir)
+
+# ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+# results.cds <- getBM(attributes = c('entrezgene_id',
+#                                  'coding'),
+#                   filters = 'entrezgene_id',
+#                   values = unique(molm.filter$entrez.id),
+#                   mart = ensembl)
+# 
+# write.csv(results.cds, "MOLM13_HyperTRIBE_CDS_sequences.csv", row.names = FALSE)
+
+results.cds <- read.csv("MOLM13_HyperTRIBE_CDS_sequences.csv")
+```
+
+Obtain number of A in 3'UTR.
+
+```{r a cds}
+setwd(output.dir)
+#ensembl <- useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+
+# results <- getBM(attributes = c('entrezgene_id',
+#                                 '3utr'),
+#                  filters = 'entrezgene_id',
+#                  values = unique(molm.filter$entrez.id),
+#                  mart = ensembl)
+
+# write.csv(results, "MOLM13_HyperTRIBE_3UTR_sequences.csv", row.names = FALSE)
+
+three.utr.seq <- read.csv("MOLM13_HyperTRIBE_3UTR_sequences.csv")
+```
+
+Remove Sequence Unavailable rows.
+
+```{r remove}
+results.five.utr.final <- results.five.utr [ results.five.utr$X5utr!="Sequence unavailable", ]
+results.cds.final <- results.cds [ results.cds$coding!="Sequence unavailable", ]
+results.three.utr.final <- three.utr.seq [ three.utr.seq$X3utr != "Sequence unavailable",]
+
+# Subset data so CDS only contains CDS hypertribe and 3'UTR only contains 3'UTR hypertribe
+# cds.entrez.id <- molm.filter [ molm.filter$annotation == "cds", ]$entrez.id
+# results.cds.final <- results.cds.final [ results.cds.final$entrezgene_id %in% cds.entrez.id, ]
+# 
+# three.utr.entrez.id <- molm.filter [ molm.filter$annotation == "utr3", ]$entrez.id
+# results.three.utr.final <- results.three.utr.final [ results.three.utr.final$entrezgene_id %in% three.utr.entrez.id, ]
+```
+
+Count total number of A's.
+
+```{r total number of A's}
+setwd(output.dir)
+
+# Count number of A in CDS
+results.five.utr.final$total.num.of.A <- str_count(results.five.utr.final$X5utr, pattern = "A")
+results.cds.final$total.num.of.A <- str_count(results.cds.final$coding, pattern = "A")
+results.three.utr.final$total.number.of.A <- str_count(results.three.utr.final$X3utr, pattern = "A")
+
+# df = results.cds.final or results.three.utr.final
+# region.name = cds or utr3
+append.num.of.edit.sites <- function(df, region.name) {
+  
+  # Append column with number of edit sites for each gene.
+  molm.filter.region.name <- molm.filter [ molm.filter$annotation == region.name, ]
+  num.edit.sites.per.gene <- as.data.frame( table(molm.filter.region.name$entrez.id) )
+  colnames(num.edit.sites.per.gene) <- c("entrezgene_id", "num.edit.sites")
+  
+  # Merge genes with edit site
+  results.merge.subset <- merge(df, num.edit.sites.per.gene, by = "entrezgene_id")
+
+  # Append back genes with zero edit sites
+  merged.entrez.id <- results.merge.subset$entrezgene_id
+  zero.edit.sites <- df [ !(df$entrezgene_id %in% merged.entrez.id), ]
+  zero.edit.sites$num.edit.sites <- 0
+
+  results.final.with.edit.sites <- rbind(results.merge.subset, zero.edit.sites)
+  
+  return(results.final.with.edit.sites)
+
+}
+
+results.five.utr.final.with.freq <- append.num.of.edit.sites(results.five.utr.final, "utr5")
+results.cds.final.with.freq <- append.num.of.edit.sites(results.cds.final, "cds")
+results.three.utr.final.with.freq <- append.num.of.edit.sites(results.three.utr.final, "utr3")
+
+# write.csv(results.five.utr.final.with.freq, "results.five.utr.final.with.freq.csv", row.names = FALSE)
+# write.csv(results.cds.final.with.freq, "results.cds.final.with.freq.csv", row.names = FALSE)
+# write.csv(results.three.utr.final.with.freq, "results.three.utr.final.with.freq.csv", row.names = FALSE)
+```
+
+Compute z-score.
+
+```{r compute z score}
+setwd(output.dir)
+
+# Concatenate the total number of edit sites and total number of A's
+total.num.edit.sites.cds <- sum(results.cds.final.with.freq$num.edit.sites)
+total.num.of.A.cds <- sum(results.cds.final.with.freq$total.num.of.A)
+
+total.num.edit.sites.three.utr <- sum(results.three.utr.final.with.freq$num.edit.sites)
+total.num.of.A.three.utr <- sum(results.three.utr.final.with.freq$total.number.of.A)
+
+P <- total.num.edit.sites.cds / total.num.of.A.cds
+C <- total.num.edit.sites.three.utr
+N <- total.num.of.A.three.utr
+
+z.score <- ( C - N*P ) / ( sqrt(N*P*(1-P)) )
+
+output.z.score <- data.frame( CDS_total.num.edit.sites = total.num.edit.sites.cds,
+                              CDS_total.num.of.A = total.num.of.A.cds,
+                              ThreeUTR_total.num.edit.sites = total.num.edit.sites.three.utr,
+                              ThreeUTR_total.num.of.A = total.num.of.A.three.utr,
+                              P = P,
+                              C = C,
+                              N = N, 
+                              z.score = z.score)
+
+# write.csv(output.z.score, "output.z.score.stats.csv", row.names = FALSE)
+```
+
+Fisher exact test
+columns: # A's edited vs # A's not edited
+rows: 5UTR, 3UTR, CDS vs 3UTR
+
+```{r fisher test}
+# Concatenate the total number of edit sites and total number of A's
+total.num.edit.sites.five.utr <- sum(results.five.utr.final.with.freq$num.edit.sites)
+total.num.of.A.five.utr <- sum(results.five.utr.final.with.freq$total.num.of.A)
+
+total.num.edit.sites.cds <- sum(results.cds.final.with.freq$num.edit.sites)
+total.num.of.A.cds <- sum(results.cds.final.with.freq$total.num.of.A)
+
+total.num.edit.sites.three.utr <- sum(results.three.utr.final.with.freq$num.edit.sites)
+total.num.of.A.three.utr <- sum(results.three.utr.final.with.freq$total.number.of.A)
+
+total.num.of.A.edited.in.all <- sum( total.num.edit.sites.five.utr, 
+                                     total.num.edit.sites.cds, 
+                                     total.num.edit.sites.three.utr )
+
+total.num.of.A.NOT.EDITED.in.all <- sum( total.num.of.A.five.utr - total.num.edit.sites.five.utr,
+                                         total.num.of.A.cds - total.num.edit.sites.cds,
+                                         total.num.of.A.three.utr - total.num.edit.sites.three.utr )
+
+# Prepare fisher input
+fisher.input <- data.frame( num.of.A.NOT.edited = c( total.num.of.A.NOT.EDITED.in.all,
+                                                     (total.num.of.A.three.utr - total.num.edit.sites.three.utr) ),
+                            num.of.A.edited = c( total.num.of.A.edited.in.all, 
+                                                 total.num.edit.sites.three.utr ) )
+rownames(fisher.input) <- c("5UTR.3UTR.CDS", "3UTR")
+fisher.input.matrix <- as.matrix(fisher.input)
+
+# Fisher exact test
+fisher.test(fisher.input.matrix, alternative="greater")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,209 @@
+---
+title: "MSI2 cluster sites based on non-significant edit sites"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(ggplot2)
+library(GenomicFeatures)
+```
+
+Import data.
+MOLM13 data with distances was produced with my modified version of ZiNing's code (because I could not get her version to work in my computer), which I show in powerpoint that it reliably locates MSI2 motifs and selects the closest one.
+I used ZiNing's molm13_with_distance.csv to be able to subset between significant and non-significant sites, but the distances are calculated based on my script.
+
+```{r molm13 data}
+setwd("/Users/karen/mount/chuk/MSI2_cluster_nearby_edit_sites/data/")
+#setwd("/Users/chuk/sshfs_mount/chuk/MSI2_cluster_nearby_edit_sites/data/")
+
+molm13.sig <- read.csv("molm13_with_distance.csv")
+molm13.sig.and.no.sig <- read.csv("molm13.distance.to.nearest.motif.csv")
+
+molm13.sig$genomic.coords <- paste(molm13.sig$chr, molm13.sig$pos, 
+                                   molm13.sig$strand, molm13.sig$entrez.id, sep="_")
+molm13.sig.and.no.sig$genomic.coords <- paste(molm13.sig.and.no.sig$seqnames, molm13.sig.and.no.sig$start, molm13.sig.and.no.sig$strand, molm13.sig.and.no.sig$entrez.id, sep="_")
+```
+
+For MOLM13, split between significant and non-significant edit sites.
+
+10/2/19: There are non-significant p-adjusted values in the significant data generated from the re-run of Yuheng's betabinom script.
+
+```{r sig and not sig}
+sig <- molm13.sig.and.no.sig [ molm13.sig.and.no.sig$genomic.coords %in% molm13.sig$genomic.coords, ]
+not.sig <- molm13.sig.and.no.sig [ !(molm13.sig.and.no.sig$genomic.coords %in% molm13.sig$genomic.coords), ]
+```
+
+List the significant edit sites that do not have matching p-values.
+7 edit sites don't have matching p-values. Only 2 are way off. The others have p-values that are very similar to each other.
+
+```{r not matching p-values}
+temp.molm13.sig <- molm13.sig
+temp.molm13.sig$p.value <- round( temp.molm13.sig$p.value, 4)
+temp.molm13.sig$test.genomic.coords <- paste(temp.molm13.sig$chr, temp.molm13.sig$pos, temp.molm13.sig$strand,
+                                             temp.molm13.sig$entrez.id, temp.molm13.sig$p.value, sep="_")
+
+temp.sig <- sig
+temp.sig$p.value <- round( temp.sig$p.value, 4)
+temp.sig$test.genomic.coords <- paste(temp.sig$seqnames, temp.sig$start, temp.sig$strand, temp.sig$entrez.id, 
+                                      temp.sig$p.value, sep="_")
+
+nrow( temp.sig [ !(temp.sig$test.genomic.coords %in% temp.molm13.sig$test.genomic.coords), ] )
+temp.molm13.sig [ !(temp.molm13.sig$test.genomic.coords %in% temp.sig$test.genomic.coords), ]
+```
+
+
+Plot distance distribution.
+
+```{r plot}
+setwd("/Users/karen/mount/chuk/MSI2_cluster_nearby_edit_sites/data/")
+
+sig$cell.type <- "signif_sites"
+not.sig$cell.type <- "not_signif_sites"
+plot.df <- rbind(sig, not.sig)
+plot.df$dist.to.motif <- abs(plot.df$dist.to.motif)
+
+plot.distance.to.nearest.motif <- function(df, motif.seq, input.color) {
+
+  ggplot(df, aes(dist.to.motif, fill=cell.type)) + 
+    geom_density(color = "black", alpha = 0.5) + 
+    #scale_fill_manual(values = c(input.color)) +
+    scale_x_continuous(breaks = seq(0, 100, 10), limits = c(0, 100)) +
+    theme_minimal() +
+    xlab("\nDistance (bp)") + ylab("Density\n") +
+    theme(axis.text=element_text(size=50, color="black"), axis.title=element_text(size=50, color="black")) + # make axis labels bigger
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    ggtitle(paste0("MOLM13: Distance between hypertribe site & nearest motif\n")) +
+    theme(plot.title = element_text(size=20)) +
+    theme(legend.title=element_text(size=0), 
+          legend.text=element_text(size=35)) +
+    theme(axis.text=element_text(size=50), axis.title.x = element_text(size=50), axis.title.y = element_text(size=50), #edit font size of x & y labels
+          panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5)) #get rid of top and right border lines
+
+}
+
+pdf(paste0("MOLM13_distance_between_hypertribe_site_to_nearest_msi2_motif_significant_and_not_significant_edit_sites", msi2.motif.sequence, ".pdf"), 15, 10)
+plot.distance.to.nearest.motif(plot.df, msi2.motif.sequence, "#56B4E9")
+dev.off()
+```
+
+
+Fisher enrichment test.
+
+An odds ratio of 1 indicates that the condition or event under study is equally likely to occur in both groups. An odds ratio greater than 1 indicates that the condition or event is more likely to occur in the first group.
+
+
+```{r fisher}
+setwd("/Users/karen/mount/chuk/MSI2_cluster_nearby_edit_sites/data/")
+
+fisher.test.function <- function(basepair.length) {
+
+  window.size <- basepair.length
+
+  sig.subset <- subset(sig, dist.to.motif <= window.size)
+  not.sig.subset <- subset(not.sig, dist.to.motif <= window.size)
+
+  other.sig.subset <- subset(sig, dist.to.motif > window.size)
+  other.not.sig.subset <- subset(not.sig, dist.to.motif > window.size)
+
+  fisher.input <- matrix(c(nrow(sig.subset),
+                         nrow(not.sig.subset),
+                         nrow(other.sig.subset),
+                         nrow(other.not.sig.subset)), nrow=2, ncol=2)
+
+  result <- fisher.test(fisher.input,alternative="greater")$p.val
+
+  return(result)
+
+}
+
+fisher.enrichment <- data.frame(window.length = seq(0,100,1), p.value = NA)
+p.value.temp <- c()
+
+for (i in seq(0, 100, 1)) {
+
+  p.value <- ( fisher.test.function(i) )
+  p.value.temp <- c(p.value.temp, p.value)
+
+}
+
+fisher.enrichment$p.value <- p.value.temp
+write.csv(fisher.enrichment, "fisher.enrichment.csv", row.names = FALSE)
+
+png("fisher.enrichment_windowlength_vs_pvalue.png", 1000, 500)
+par(mar=c(5,5,5,5))
+ggplot(fisher.enrichment, aes(x=window.length, y=p.value)) +
+  geom_point(size=2) +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(),
+panel.background = element_blank()) +
+  ggtitle("Fisher test p-values for window sizes; red line at p-value = 0.01") +
+  theme(
+  axis.title.x = element_text(size = 20),
+  axis.text.x = element_text(size = 20),
+  axis.title.y = element_text(size = 20),
+  axis.text.y = element_text(size = 20)) +
+  theme(panel.border = element_blank(), axis.line = element_line()) +
+  geom_hline(yintercept=0.01, linetype="dashed", color = "red") +
+  scale_x_continuous(breaks = seq(0,100,10))
+# plot(fisher.enrichment$window.length, fisher.enrichment$p.value,
+#      cex.axis=3, cex.lab=3, main="red line at p.value = 0.01",
+#      xlab="\nwindow length (bp)", ylab="p-value")
+# abline(h=0.01, col="red", lwd=3)
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+##################################
+
+Plot clusters in Hoxa9.
+
+```{r gtf}
+gff = makeTxDbFromGFF("/Users/chuk/Documents/gtf_index/gencode.v19.annotation.gtf")
+three.utr <- threeUTRsByTranscript(gff, use.names=TRUE)
+three.utr.df <- as.data.frame(three.utr)
+```
+
+
+```{r plot clusters}
+plot.clusters.on.genes <- function(df, gene.name, ensembl.transcript.id) {
+  
+  gene.coords <- three.utr.df [ grepl(ensembl.transcript.id, three.utr.df$group_name), ]
+  
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), ylim=c(0,1),
+       xlab="", ylab="Edit freq\n",
+       cex.lab=2, cex.axis=2, las=2)
+  title(main=paste0("HyperTRIBE clustering at ", gene.name, " p-adjusted < ", padj.thres), cex.main=2)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 5, col="black")
+  # segments(gene.lsc$pos, 0, gene.lsc$pos, gene.lsc$diff.frequency, col="red", lwd=5)
+  # segments(gene.lsk$pos, 0, gene.lsk$pos, gene.lsk$diff.frequency, col="blue", lwd=5)
+  # segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="green", lwd=5)
+  
+}
+
+plot.clusters.on.genes(sig, "Hoxa9", "ENST00000343483")
+```
+
+
+
+
+
+
+
+
+
+
+
+

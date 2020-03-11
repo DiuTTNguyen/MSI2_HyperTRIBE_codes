@@ -1,0 +1,108 @@
+---
+title: "normalize_read_counts"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(DESeq2)
+library(data.table)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(biomaRt)
+library(ggplot2)
+library("ggrepel")
+library(data.table)
+library(dplyr)
+```
+
+```{r folder}
+#folder <- "/Users/chuk/mount/chuk/LT_vs_MPPs/data/"
+folder <-"/Users/karen/mount/chuk/Fig3B_betabinomial_on_LSC_and_LSK_unique_targets/"
+```
+
+Import data. Need to be RDS object in order for downstream stuff to work.
+Choose which dataset you want to run analysis. Run one R chunk: either mouse.hsc, mouse.lsk, or mouse.lsc.
+
+```{r data lsc}
+setwd(folder)
+
+reads <- readRDS("Yuheng_files/rnaseq_read_count_entrez_id.rds")
+reads.mat <- as.matrix(assay(reads))
+
+reads.vst <- varianceStabilizingTransformation(reads.mat)
+write.csv(reads.vst, "reads.vst.csv")
+```
+
+
+11/06/2019: I plan to use VST data instead of z-transformed data.
+
+
+Take the mean of the triplicates.
+
+#```{r mean of triplicates}
+# Subset for only sample columns (and exclude entrez id and gene symbol columns)
+# lsc.lsk.subset <- lsc.lsk.subset.reordered
+# lsc.lsk.subset.samples.only <- lsc.lsk.subset [ , grepl("Sample", colnames(lsc.lsk.subset)) ]
+
+# Subset data by MIG vs ADA and LSC vs LSK. Take the mean of triplicates.
+select.by.cell.type.and.condition <- function(df, df.celltype, df.condition) {
+  
+  select.condition <- df [ , grepl( df.condition, colnames(df) ) ]
+  select.celltype.and.condition <- select.condition [ , grepl(df.celltype, colnames(select.condition)) ]
+  
+  df.mean <- apply(select.celltype.and.condition, 1, mean)
+  
+  return(df.mean)
+  
+}
+
+lsc.mean.MIG <- select.by.cell.type.and.condition(reads.vst, "DsRed", "MIG")
+lsc.mean.ADA <- select.by.cell.type.and.condition(reads.vst, "DsRed", "ADA")
+lsk.mean.MIG <- select.by.cell.type.and.condition(reads.vst, "A_IGO|B_IGO|C_IGO", "MIG")
+lsk.mean.ADA <- select.by.cell.type.and.condition(reads.vst, "A_IGO|B_IGO|C_IGO", "ADA")
+
+# Combine all the conditions and cell types together to prep for z-transform.
+lsc.lsk.mean.MIG.ADA <- cbind(lsk.mean.MIG, lsc.mean.MIG, lsk.mean.ADA, lsc.mean.ADA)
+#```
+
+
+z transform the means across all 4 conditions.
+
+#```{r z-transform rows}
+setwd(folder)
+
+lsc.lsk.z.transform <- t(apply(lsc.lsk.mean.MIG.ADA, 1, scale))
+colnames(lsc.lsk.z.transform) <- c("lsk.MIG", "lsc.MIG", "lsk.ADA", "lsc.ADA")
+
+library(annotate)
+entrezid.to.genesymbol <- function(res) {
+  
+  res$entrez.id <- rownames(res)
+  
+  read.count.entrez.id <- as.character(rownames(res))
+  read.count.gene.symbol <- lookUp(read.count.entrez.id, 'org.Mm.eg.db', 'SYMBOL')
+  #read.count.gene.symbol <- lookUp(read.count.entrez.id, 'org.Hs.eg.db', 'SYMBOL')
+  read.count.gene.symbol <- unlist(read.count.gene.symbol)
+  res$gene <- read.count.gene.symbol
+  
+  return(res)
+  
+}
+
+reads.vst.with.genesymbols <- entrezid.to.genesymbol(as.data.frame(lsc.lsk.z.transform))
+
+write.csv(reads.vst.with.genesymbols, "lsc.lsk.z.transform_gene_expression.csv")
+#```
+
+
+
+
+

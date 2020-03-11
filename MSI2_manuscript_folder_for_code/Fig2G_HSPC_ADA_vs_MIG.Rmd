@@ -1,0 +1,84 @@
+---
+title: "ADA vs MIG"
+author: "Karen Chu"
+date: "1/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(dplyr)
+library(ggplot2)
+```
+
+Set working directory.
+
+```{r work dir}
+input.dir <- "~/mount/chuk/HSPC_volcano_plots_ZiNing_data/ZiNing_HSC_subpopulations/"
+figures.dir <- "~/mount/chuk/HSPC_volcano_plots_ZiNing_data/figures/"
+output.dir <- "~/mount/chuk/HSPC_volcano_plots_ZiNing_data/output/"
+```
+
+Import data
+
+```{r data}
+setwd(input.dir)
+
+lt <- read.csv("hsc_ltada_vs_ltmig.csv")
+st <- read.csv("hsc_stada_vs_stmig.csv")
+mpp2 <- read.csv("hsc_mpp2ada_vs_mpp2mig.csv")
+mpp4 <- read.csv("hsc_mpp4ada_vs_mpp4mig.csv")
+```
+
+Volcano plot. 
+
+```{r volcano}
+padj.thres <- 0.05
+
+volcano.plot <- function(res, data.name) {
+  
+  volcano.input <- as.data.frame( res[ order( res$padj, decreasing = F ), ] )
+  volcano.input <- mutate(volcano.input, sig=ifelse(volcano.input$padj < padj.thres, "Sig", "Not Sig"))
+  
+  png( paste0(figures.dir, data.name, "ADA_vs_MIG_volcano-KC.png"), 1000, 800 )
+  p <- ggplot(data=volcano.input, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) + 
+    geom_point(alpha=1, size=4) +
+    theme_minimal() +
+    theme(legend.position="none") +
+    #geom_text_repel(data=volcano.input[1:30,], aes(label=gene), size = 5,box.padding = unit(0.5, "lines"), point.padding = unit(0.5, "lines"), color="black") +
+    xlab("\nlog2(ADA / MIG)") + ylab("-log10(p)\n") +
+    ggtitle(paste0(data.name, "; padj <", padj.thres, ";\n# of sig genes: ", nrow( subset(volcano.input, sig=="Sig") ), "\n")) +
+    scale_color_manual( values = c( "Sig"='red3', "Not Sig" ='black' ) ) + 
+    #scale_x_continuous(breaks = c( round(min(volcano.input$log2FoldChange)):round(max(volcano.input$log2FoldChange)) )) +
+    theme(plot.title = element_text(size=40)) +
+    theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) +
+    theme(axis.line = element_line(colour = "black", size=1))
+    #ylim(0,10) +
+    #xlim(-2.5,2.5)
+  print(p)
+  dev.off()
+  
+}
+
+volcano.plot(lt, "LT")
+volcano.plot(st, "ST")
+volcano.plot(mpp2, "MPP2")
+volcano.plot(mpp4, "MPP4")
+```
+
+
+
+
+
+
+
+
+
+
+
+

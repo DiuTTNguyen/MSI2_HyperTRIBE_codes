@@ -1,0 +1,655 @@
+---
+title: "Mouse LSC vs LSK gene expression"
+output: html_document
+---
+
+Purpose: Input is read count data from mouse LSC (leukemia) and LSK (normal hematopoietic cells) cell populations from overexpression of Msi2-ADAR. Is there a difference between LSC and LSK gene expression for HyperTRIBE targets?
+
+Method: Run DESeq2 to get log2foldchange(LSC/LSK) and then plot the log2foldchange of HyperTRIBE targets shared between the two cell populations to see if there is a difference.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Define folder to save all plots.
+
+
+```{r folder}
+folder <- "/Users/chuk/Documents/MSI2-hyperTRIBE/LSC_vs_LSK_differential_analysis/figures/"
+```
+
+
+```{r libraries}
+library(data.table)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(DESeq2)
+library(biomaRt)
+library(ggplot2)
+library("ggrepel")
+library(data.table)
+library(dplyr)
+library(reshape2)
+```
+
+Combine LSC and LSK into one dataframe.
+
+```{r setwd and load data}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/LSC_vs_LSK_differential_analysis/")
+
+lsc <- readRDS("data/lsc_rnaseq_read_count_entrez_id.rds")
+lsk <- readRDS("data/lsk_rnaseq_read_count_entrez_id.rds")
+
+lsc <- as.data.frame(assay(lsc))
+lsk <- as.data.frame(assay(lsk))
+
+# Write as csv for GEO data submission
+#write.csv(lsc, "data/lsc_rnaseq_read_count_entrez_id.csv")
+#write.csv(lsk, "data/lsk_rnaseq_read_count_entrez_id.csv")
+
+colnames(lsc) <- paste("LSC", colnames(lsk), sep = "_")
+colnames(lsk) <- paste("LSK", colnames(lsk), sep = "_")
+
+lsc_lsk_readcount <- cbind(lsc, lsk)
+
+print(nrow(lsc))
+print(nrow(lsk))
+```
+
+Export rpkm data for Dr. Kharas with gene annotation.
+
+```{r export rpkm}
+### Convert to RPKM
+# calculates transcript length based on exon lengths in TxDb; the width function takes into account that coordinates are 1-based, which means difference of exon coordinates + 1
+convert.to.rpkm <- function(df) {
+  
+  ebg <- exonsBy( TxDb.Mmusculus.UCSC.mm10.knownGene, by="gene" )
+  transcript.length <- sum(width(reduce(ebg))) 
+
+  # Subset and match order of genes in TxDb to the order in read count data.
+  length.bp <- transcript.length[ match(rownames(df), names(transcript.length)) ]
+  length.bp <- length.bp/1000 # convert bp to kilobase
+
+  # Calculate RPKM
+  df.sum.cols <- colSums(df) # sum read count for each sample
+  df.scale.factor <- df.sum.cols / 1000000 # divide sum by one million to get scaling factor
+  df.per.million <- sweep(df, 2, df.scale.factor, `/`) # divide read count by scaling factor for each sample
+  df.rpkm <- df.per.million / length.bp # divide read count by length of transcript
+  
+  return(df.rpkm)
+
+}
+
+lsc.lsk.rpkm.for.kharas <- convert.to.rpkm(lsc_lsk_readcount)
+
+### Annotate Entrez IDs
+library(org.Mm.eg.db)
+library(annotate)
+entrezid.to.genesymbol <- function(res) {
+  
+  res$entrez.id <- rownames(res)
+  
+  yuheng.read.count.entrez.id <- as.character(rownames(res))
+  yuheng.read.count.gene.symbol <- lookUp(yuheng.read.count.entrez.id, 'org.Mm.eg.db', 'SYMBOL')
+  yuheng.read.count.gene.symbol <- unlist(yuheng.read.count.gene.symbol)
+  res$gene <- yuheng.read.count.gene.symbol
+  
+  return(res)
+  
+}
+
+lsc.lsk.rpkm.for.kharas.with.genesymbols <- entrezid.to.genesymbol(lsc.lsk.rpkm.for.kharas)
+lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest <- subset(lsc.lsk.rpkm.for.kharas.with.genesymbols, gene %in% c("Sf3b4","Pum1", "Pum2", "Hnrnpa1", "Sfpq", "Tgb972"))
+
+write.csv(lsc.lsk.rpkm.for.kharas.with.genesymbols, paste0(folder, "lsc.lsk.rpkm.for.kharas.with.genesymbols.csv"))
+write.csv(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest, paste0(folder, "lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest.csv"))
+
+### Statistics
+# subset by sample type
+lsc.mig <- lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest [ ,grepl("LSC_Sample_MIG", colnames(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest)) ]
+lsk.mig <- lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest [ ,grepl("LSK_Sample_MIG", colnames(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest)) ]
+lsc.adar <- lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest [ ,grepl("LSC_Sample_ADA", colnames(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest)) ]
+lsk.adar <- lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest [ ,grepl("LSK_Sample_ADA", colnames(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest)) ]
+lsc.dcd <- lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest [ ,grepl("LSC_Sample_DCD", colnames(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest)) ]
+lsk.dcd <- lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest [ ,grepl("LSK_Sample_DCD", colnames(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest)) ]
+
+# prepare stats
+lsc.lsk.mean <- data.frame( lsc.mig.mean=apply(lsc.mig, 1, mean),
+                            lsk.mig.mean=apply(lsk.mig, 1, mean),
+                            lsc.adar.mean=apply(lsc.adar, 1, mean),
+                            lsk.adar.mean=apply(lsk.adar, 1, mean),
+                            lsc.dcd.mean=apply(lsc.dcd, 1, mean),
+                            lsk.dcd.mean=apply(lsk.dcd, 1, mean))
+
+lsc.lsk.sd <- data.frame( lsc.mig.standard.dev=apply(lsc.mig, 1, sd),
+                          lsk.mig.standard.dev=apply(lsk.mig, 1, sd),
+                          lsc.adar.standard.dev=apply(lsc.adar, 1, sd),
+                          lsk.adar.standard.dev=apply(lsk.adar, 1, sd),
+                          lsc.dcd.standard.dev=apply(lsc.dcd, 1, sd),
+                          lsk.dcd.standard.dev=apply(lsk.dcd, 1, sd))
+
+lsc.lsk.stderr <- data.frame( lsc.mig.stderror = lsc.lsk.sd$lsc.mig.standard.dev / sqrt(3),
+                              lsk.mig.stderror = lsc.lsk.sd$lsk.mig.standard.dev / sqrt(3),
+                              lsc.adar.stderror = lsc.lsk.sd$lsc.adar.standard.dev / sqrt(3),
+                              lsk.adar.stderror = lsc.lsk.sd$lsk.adar.standard.dev / sqrt(3),
+                              lsc.dcd.stderror = lsc.lsk.sd$lsc.dcd.standard.dev / sqrt(3),
+                              lsk.dcd.stderror = lsc.lsk.sd$lsk.dcd.standard.dev / sqrt(3),
+                              gene=lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest$gene)
+
+# Aggregate data into one dataframe
+lsc.lsk.df <- cbind(lsc.lsk.mean, gene=lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest$gene)
+lsc.lsk.ggplot <- cbind(melt(lsc.lsk.df), melt(lsc.lsk.stderr))
+colnames(lsc.lsk.ggplot) <- c("gene", "variable", "mean",
+                              "gene1", "variable1", "standard.error") # rename so don't confuse ggplot when plotting
+
+ggplot(lsc.lsk.ggplot, aes(x=gene, y=mean, fill=variable)) + 
+  geom_bar(stat="identity", color="black", 
+           position=position_dodge()) +
+  geom_errorbar(aes(ymin=mean-standard.error, ymax=mean+standard.error), 
+                width=.2,
+                position=position_dodge(.9))
+
+# Combine with p-adjusted value for each gene
+lsc.lsk.mig.deseq.results <- read.csv(paste0(folder, "MSI2-MIG_LSC_over_LSK_DESeq2Results.csv"))
+lsc.lsk.adar.deseq.results <- read.csv(paste0(folder, "MSI2-ADA_LSC_over_LSK_DESeq2Results.csv"))
+lsc.lsk.dcd.deseq.results <- read.csv(paste0(folder, "MSI2-DCD_LSC_over_LSK_DESeq2Results.csv"))
+
+lsc.lsk.mig.deseq.results.subset.genes.of.interest <- subset(lsc.lsk.mig.deseq.results, gene %in% c("Sf3b4","Pum1", "Pum2", "Hnrnpa1", "Sfpq", "Tgb972"))
+lsc.lsk.adar.deseq.results.subset.genes.of.interest <- subset(lsc.lsk.adar.deseq.results, gene %in% c("Sf3b4","Pum1", "Pum2", "Hnrnpa1", "Sfpq", "Tgb972"))
+lsc.lsk.dcd.deseq.results.subset.genes.of.interest <- subset(lsc.lsk.dcd.deseq.results, gene %in% c("Sf3b4","Pum1", "Pum2", "Hnrnpa1", "Sfpq", "Tgb972"))
+
+# Export RPKM, mean, standard error all in one dataframe
+lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest.reordered <- lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest %>% select(entrez.id, gene, everything()) # reorder columns
+lsc.lsk.stderr.without.gene.symbol <- select(lsc.lsk.stderr, -one_of("gene")) # remove gene column
+
+lsc.lsk.rpkm.mean.stderr.for.kharas.with.genesymbols.genes.of.interest <- cbind(lsc.lsk.rpkm.for.kharas.with.genesymbols.genes.of.interest.reordered,
+                                                                                lsc.lsk.mean,
+                                                                                lsc.lsk.stderr.without.gene.symbol,
+                                                                                LSC.vs.LSK.MIG.padj=lsc.lsk.mig.deseq.results.subset.genes.of.interest$padj,
+                                                                                LSC.vs.LSK.ADAR.padj=lsc.lsk.adar.deseq.results.subset.genes.of.interest$padj,
+                                                                                LSC.vs.LSK.DCD.padj=lsc.lsk.dcd.deseq.results.subset.genes.of.interest$padj)
+write.csv(lsc.lsk.rpkm.mean.stderr.for.kharas.with.genesymbols.genes.of.interest, 
+          paste0(folder, "lsc.lsk.rpkm.mean.stderr.for.kharas.with.genesymbols.genes.of.interest.csv"))
+```
+
+
+Filter out genes with median rpkm < 1.
+
+```{r filter by rpkm}
+### Step 2: Filter by rpkm >= 1
+# calculates transcript length based on exon lengths in TxDb; the width function takes into account that coordinates are 1-based, which means difference of exon coordinates + 1
+filter.by.rpkm <- function(df) {
+  
+  ebg <- exonsBy( TxDb.Mmusculus.UCSC.mm10.knownGene, by="gene" )
+  transcript.length <- sum(width(reduce(ebg))) 
+
+  # Subset and match order of genes in TxDb to the order in read count data.
+  length.bp <- transcript.length[ match(rownames(df), names(transcript.length)) ]
+  length.bp <- length.bp/1000 # convert bp to kilobase
+
+  # Calculate RPKM
+  df.sum.cols <- colSums(df) # sum read count for each sample
+  df.scale.factor <- df.sum.cols / 1000000 # divide sum by one million to get scaling factor
+  df.per.million <- sweep(df, 2, df.scale.factor, `/`) # divide read count by scaling factor for each sample
+  df.rpkm <- df.per.million / length.bp # divide read count by length of transcript
+
+  # Select genes whose median rpkm is greater than/equal to 1
+  df.rpkm.row.median <- apply(df.rpkm, 1, median) # take median for every gene
+  df.rpkm.median.filtered <- subset(df.rpkm.row.median, df.rpkm.row.median >= 1) # Select for genes with median >= 1
+  df.filtered.names <- names(df.rpkm.median.filtered)
+
+  df.rpkm.filtered <- subset(as.data.frame(df.rpkm), rownames(df.rpkm) %in% df.filtered.names)
+  df.filtered <- df [ rownames(df) %in% rownames(df.rpkm.filtered), ] # filter raw read count by the genes with rpkm >= 1
+  
+  return(df.filtered)
+
+}
+
+lsc.lsk.filtered <- filter.by.rpkm(lsc_lsk_readcount)
+```
+
+
+###
+
+Old workaround when rpkm wasn't working for some reason:
+Tried to apply RPKM filter. Yuheng used TxDb.Mmusculus.UCSC.mm10.knownGene as database to perform read count, but some entrez id in Yuheng's read count does not exist in TxDb database and I don't know why. So I will subset read count data for ADAR samples only and filter out all genes whose median read count is < or = to 1.
+
+Edit name.type to either "ADA" for Msi2-ADAR or "MIG" for Msi2-MIG.
+
+#```{r filter}
+name.type <- "DCD" #wildtype samples
+df <- lsc_lsk_readcount[, grep(name.type, colnames(lsc_lsk_readcount))]
+  
+df.median <- apply(df, 1, median)
+df.filtered.by.median <- subset(df.median, df.median >= 1)
+df.filtered.genes <- names(df.filtered.by.median)
+lsc_lsk_readcount.filtered <- subset(as.data.frame(df), rownames(df) %in% df.filtered.genes)
+#```
+
+###
+
+Prepare data for DESeq2. Only keep ADAR or MIG read counts (depends on user's definition in `name.type` R object.
+
+```{r prep DESeq2}
+name.type <- "ADA" #wildtype samples
+lsc_lsk_readcount.filtered <- lsc.lsk.filtered[, grep(name.type, colnames(lsc.lsk.filtered))]
+
+cell.name <- tstrsplit(colnames(lsc_lsk_readcount.filtered), "_")[[1]]
+coldata <- data.frame(Sample = as.factor(colnames(lsc_lsk_readcount.filtered)), cell = as.factor(cell.name))
+
+dds <- DESeqDataSetFromMatrix(
+  countData = as.matrix(lsc_lsk_readcount.filtered), 
+  colData = coldata, 
+  design = ~cell) #only one cell population so leave "cell" out or else error occurs.
+
+dds$cell <- relevel(dds$cell, "LSK") # intercept that DESeq2 calculates depends on the first factor. If "LSK" first, then results in log2foldchange(LSC/LSK). If "LSC" first, then results is log2foldchange(LSK/LSC).
+```
+
+Run DESeq2
+
+```{r DESeq2}
+dds <- DESeq(dds)
+dds.vst <- varianceStabilizingTransformation(dds)
+res <- results(dds)
+```
+
+Convert EntrezID to gene symbol.
+
+Old way:
+res$entrez.id <- rownames(res)
+ensembl = useMart("ensembl", dataset="mmusculus_gene_ensembl")
+gene.symbols <- getBM(
+  values = res$entrez.id,
+  filters = c("entrezgene"),
+  attributes = c("entrezgene", "external_gene_name", "description"),
+  mart = ensembl
+)
+
+gene.symbols.reordered <- gene.symbols[match(res$entrez.id, gene.symbols$entrezgene), 2]
+res$gene <- gene.symbols.reordered
+
+```{r gene symbol}
+library(org.Mm.eg.db)
+library(annotate)
+entrezid.to.genesymbol <- function(res) {
+  
+  res$entrez.id <- rownames(res)
+  
+  yuheng.read.count.entrez.id <- as.character(rownames(res))
+  yuheng.read.count.gene.symbol <- lookUp(yuheng.read.count.entrez.id, 'org.Mm.eg.db', 'SYMBOL')
+  yuheng.read.count.gene.symbol <- unlist(yuheng.read.count.gene.symbol)
+  res$gene <- yuheng.read.count.gene.symbol
+  
+  return(res)
+  
+}
+
+lsc.lsk.dds.with.genesymbols <- entrezid.to.genesymbol(res)
+write.csv(as.data.frame(lsc.lsk.dds.with.genesymbols), paste0(folder, "MSI2-", name.type, "_LSC_over_LSK_DESeq2Results.csv"))
+```
+
+Filter out genes with padj = NA.
+After running code, found out none of the p-adj are NA, so "res" and "lsc.lsk.dds.with.genesymbols" are the same dataframes but "lsc.lsk.dds.with.genesymbols" has gene symbols while "res" doesn't.
+
+```{r padj NA filter}
+cat("# of genes before padj filter: ", nrow(res))
+res <- res[!is.na(res$padj), ]
+cat("# of genes after padj filter: ", nrow(res))
+```
+
+Plot PCA.
+
+Old code:
+data <- plotPCA(dds.vst, intgroup = c( "cell"), returnData=TRUE)
+percentVar <- round(100 * attr(data, "percentVar"))
+ggplot(data, aes(PC1, PC2, color=cell)) + geom_point(size=9) +
+  theme_bw() +
+  xlab(paste0("\nPC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance\n")) +
+  theme(plot.title = element_text(size = 12, face = "bold"),
+        legend.title=element_text(size=30), 
+        legend.text=element_text(size=30)) +
+  ggtitle(paste0("Mouse LSC vs LSK gene expression (Msi2-", name.type, ")\n")) + # plot title
+  theme(plot.title = element_text(size=40)) + # make title font size 40
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) + # make axis labels bigger
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black", size=1)) # remove top and right plot border line
+
+```{r PCA}
+pdf( paste0(folder, "LSC_vs_LSK_", name.type, "_PCA-KC.pdf"), 8, 6, useDingbats = F )
+plotPCA(dds.vst, intgroup="cell")
+dev.off()
+```
+
+MA plot.
+
+Old code:
+padj.thres <- 0.001
+
+ma.input <- as.data.frame( res[ order( res$padj, decreasing = F ), ] )
+ma.input <- mutate(ma.input, sig=ifelse(ma.input$padj < padj.thres, "Sig", "Not Sig"))
+
+pdf( paste0(folder, "LSC_vs_LSK_", name.type, "_MA-KC.pdf"), 14, 12, useDingbats = F )
+qplot( log2(baseMean), log2FoldChange, data = ma.input, geom = 'point', color = sig ) +
+  geom_point(size = 3) +
+  scale_color_manual( values = c( "Sig"='red3', "Not Sig" ='darkgray' ) ) +
+  theme_bw() +
+  theme(legend.position="none") + # removes color legend
+  xlab( "\nLog2 mean of normalized counts" ) + ylab( "Log2 fold change\n" ) +
+  ggtitle(paste0("Mouse LSC vs LSK gene expression (Msi2-", name.type, ") ; padj < 0.001\n")) +
+  theme(plot.title = element_text(size=30)) + 
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black"))
+dev.off()
+
+```{r MA plot}
+pdf( paste0(folder, "LSC_vs_LSK_", name.type, "_MA-KC.pdf"), 8, 6, useDingbats = F )
+plotMA(res, ylim=c(-5,5))
+dev.off()
+```
+
+Volcano plot. The gene Ifitm1 has p-value of 0.
+
+```{r volcano}
+padj.thres <- 0.001
+
+res <- lsc.lsk.dds.with.genesymbols # "lsc.lsk.dds.with.genesymbols" is the same as "res" but with gene symbols
+
+volcano.input <- as.data.frame( res[ order( res$padj, decreasing = F ), ] )
+volcano.input <- mutate(volcano.input, sig=ifelse(volcano.input$padj < padj.thres, "Sig", "Not Sig"))
+
+pdf( paste0(folder, "LSC_vs_LSK_", name.type, "_volcano-KC.pdf"), 14, 10, useDingbats = F )
+ggplot(data=volcano.input, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) + 
+  geom_point(alpha=1, size=4) +
+  theme_bw() +
+  theme(legend.position="none") +
+  geom_text_repel(data=volcano.input[1:30,], aes(label=gene), size = 5,nudge_y=7, box.padding = unit(0.5, "lines"), point.padding = unit(0.5, "lines"), color="black") +
+  xlab("\nlog2(LSC/LSK)") + ylab("-log10(p-value)\n") +
+  ggtitle(paste0("Mouse LSC vs LSK (Msi2-", name.type, ") ; padj < 0.001\n")) +
+  scale_color_manual( values = c( "Sig"='red3', "Not Sig" ='darkgray' ) ) + 
+  theme(plot.title = element_text(size=40)) +
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.background = element_blank(), axis.line = element_line(colour = "black", size=1))
+dev.off()
+```
+
+Violin plot of log2FC(LSC/LSK).
+Msi2 gene targets:
+mouse_lsc_snp_counts_dedupped_significant.csv
+mouse_lsk_snp_counts_dedupped_significant.csv
+
+Filter Msi2 gene targets by ADA, DCD, MIG fpkm >= 5, diff.frequency >= 0.1.
+Create venn diagram of shared and unique targets.
+
+```{r Subsetting for unique and shared targets}
+# Import LSC and LSK target list.
+path <- "/Users/chuk/Documents/MSI2-hyperTRIBE/LSC_vs_LSK_differential_analysis/data/"
+lsc.targets <- read.csv(paste0(path, "mouse_lsc_snp_counts_dedupped_significant.csv"))
+lsk.targets <- read.csv(paste0(path, "mouse_lsk_snp_counts_dedupped_significant.csv"))
+
+# Filter targets.
+lsc.targets.filtered <- subset(lsc.targets, lsc.targets$ADA.fpkm >=5 & 
+                                 lsc.targets$DCD.fpkm >=5 &
+                                 lsc.targets$MIG.fpkm >=5 &
+                                 lsc.targets$diff.frequency >=0.1)
+                                 
+lsk.targets.filtered <- subset(lsk.targets, lsk.targets$ADA.fpkm >=5 & 
+                                 lsk.targets$DCD.fpkm >=5 &
+                                 lsk.targets$MIG.fpkm >=5 &
+                                 lsk.targets$diff.frequency >=0.1)
+
+# Get entrez id in the lsc and lsk input target files.
+lsc.targets.filtered.entrezid <- unique(lsc.targets.filtered$entrez.id)
+lsk.targets.filtered.entrezid <- unique(lsk.targets.filtered$entrez.id)
+
+# Plot Venn Diagram of shared and unique targets.
+library(VennDiagram)
+venn.diagram(
+  x = list(unique(lsc.targets.filtered.entrezid), unique(lsk.targets.filtered.entrezid)),
+  category.names = c("LSC-unique", "LSK-unique"),
+  filename = paste0(folder, "venn_diagram.png"),
+      output = TRUE ,
+      imagetype="png" ,
+      height = 1480 , 
+      width = 1480 , 
+      resolution = 300,
+      lty = 'blank',
+      fill = c('red', 'blue'),
+      cat.default.pos = "outer",
+      cat.pos = c(-17, 17), # horizontal distance of text in plot
+      cat.dist = c(0.05, 0.05) # vertical distance between venn diagram and text
+)
+
+# Subset by LSC unique, LSK unique, and shared targets.
+shared.targets <- intersect(lsc.targets.filtered.entrezid, lsk.targets.filtered.entrezid)
+lsc.unique.targets <- lsc.targets.filtered.entrezid [ !(lsc.targets.filtered.entrezid %in% lsk.targets.filtered.entrezid) ]
+lsk.unique.targets <- lsk.targets.filtered.entrezid [ !(lsk.targets.filtered.entrezid %in% lsc.targets.filtered.entrezid) ]
+cat("# shared targets: ", length(shared.targets), "\n")
+cat("# LSC unique targets: ", length(lsc.unique.targets), "\n")
+cat("# LSK unique targets: ", length(lsk.unique.targets), "\n")
+
+# Save the gene lists among shared targets, LSC-specific, and LSK-specific.
+write.csv(shared.targets, paste0(folder, "shared_targets.csv"))
+write.csv(lsc.unique.targets, paste0(folder, "LSC-specific_targets.csv"))
+write.csv(lsk.unique.targets, paste0(folder, "LSK-specific_targets.csv"))
+```
+
+Violin plots.
+
+```{r violin}
+# Subset log2FC by targets. All entrez id for targets are present in log2FC data - I already checked.
+# In LSC, some entrez id present in lsc.unique.targets is not present in the DESeq2 results.
+violin.df <- as.data.frame(res)
+violin.df.shared <- violin.df [ violin.df$entrez.id %in% shared.targets, ]
+violin.df.lsc.unique <- violin.df [ violin.df$entrez.id %in% lsc.unique.targets, ]
+violin.df.lsk.unique <- violin.df [ violin.df$entrez.id %in% lsk.unique.targets, ]
+
+# Prepare input for violin plot.
+violin.df.shared$cell.specificity <- "Shared"
+violin.df.lsc.unique$cell.specificity <- "LSC unique"
+violin.df.lsk.unique$cell.specificity <- "LSK unique"
+df.final <- rbind(violin.df.shared, violin.df.lsc.unique, violin.df.lsk.unique)
+df.final$cell.specificity <- as.factor(df.final$cell.specificity)
+df.final$cell.specificity <- relevel(df.final$cell.specificity, "Shared")
+
+# Plot violin.
+pdf( paste0(folder, "LSC_vs_LSK_", name.type, "_violin-KC.pdf"), 14, 10, useDingbats = F )
+ggplot(df.final, aes(x=cell.specificity, y=log2FoldChange)) + 
+  geom_hline(yintercept=0, 
+             color = "black", size=6) +
+  geom_violin(aes(fill=cell.specificity)) + 
+  geom_boxplot(width=0.2) + 
+  labs(title=paste0("Mouse LSC vs LSK (Msi2-", name.type, ")\n"), x="", y="Log2FoldChange(LSC/LSK)\n") +
+  theme_light() +
+  theme(axis.text.x = element_text(color="black"), axis.text.y = element_text(color="black")) +
+  theme(legend.position="none") + 
+  theme(plot.title = element_text(size=40)) +
+  theme(axis.text=element_text(size=40), axis.title.x = element_text(size=40), axis.title.y = element_text(size=40), 
+        panel.border = element_blank(), axis.line.x = element_line(size = 1.5), axis.line.y = element_line(size = 1.5))
+dev.off()
+
+# Save files.
+write.csv(violin.df.shared, paste0(folder, "LSC_vs_LSK_Msi2-", name.type, "_shared_targets.csv"))
+write.csv(violin.df.lsc.unique, paste0(folder, "LSC_vs_LSK_Msi2-", name.type, "_LSC-unique.csv"))
+write.csv(violin.df.lsk.unique, paste0(folder, "LSC_vs_LSK_Msi2-", name.type, "_LSK-unique.csv"))
+```
+
+
+Diu wants to know how many genes are around log2FC = 0 for shared targets, LSC-specific targets, and LSK-specific targets.
+
+```{r proportion of log2FC}
+# Print numbers
+cat("# of shared targets with -1 < log2FC < 1: ", nrow(subset(violin.df.shared, log2FoldChange > -1 & log2FoldChange < 1)), "\n")
+cat("# of LSC-specific targets with -1 < log2FC < 1: ", nrow(subset(violin.df.lsc.unique, log2FoldChange > -1 & log2FoldChange < 1)), "\n")
+cat("# of LSK-specific targets with -1 < log2FC < 1: ", nrow(subset(violin.df.lsk.unique, log2FoldChange > -1 & log2FoldChange < 1)), "\n\n")
+
+cat("# of shared targets with -2 < log2FC < -1 & 1 < log2FC < 2: ", nrow(subset(violin.df.shared, log2FoldChange < -1 & log2FoldChange > -2 |
+                                                                log2FoldChange > 1 & log2FoldChange < 2)), "\n")
+cat("# of LSC-specific targets with -2 < log2FC < -1 & 1 < log2FC < 2: ", nrow(subset(violin.df.lsc.unique, log2FoldChange < -1 & log2FoldChange > -2 |
+                                                                log2FoldChange > 1 & log2FoldChange < 2)), "\n")
+cat("# of LSK-specific targets with -2 < log2FC < -1 & 1 < log2FC < 2: ", nrow(subset(violin.df.lsk.unique, log2FoldChange < -1 & log2FoldChange > -2 |
+                                                                log2FoldChange > 1 & log2FoldChange < 2)), "\n\n")
+
+cat("# of shared targets with -2 < log2FC & log2FC > 2: ", nrow(subset(violin.df.shared, log2FoldChange < -2 | log2FoldChange > 2)), "\n")
+cat("# of LSC-specific targets with -2 < log2FC & log2FC > 2: ", nrow(subset(violin.df.lsc.unique, log2FoldChange < -2 | log2FoldChange > 2)), "\n")
+cat("# of LSK-specific targets with -2 < log2FC & log2FC > 2: ", nrow(subset(violin.df.lsk.unique, log2FoldChange < -2 | log2FoldChange > 2)), "\n")
+```
+
+For statistics, Han suggested non-parametric test.
+Wilcoxon null hypothesis: The two populations do not follow the same distribution.
+You can do wilcoxon test on unequal sample sizes.
+
+For Diu: I performed one-sided wilcoxon test to determine whether or not there is statistical significance between lsc-unique vs lsk-unique, shared vs lsc-unique, shared vs lsk-unique. The result for Msi2-ADAR and Msi2-DCD analysis is p-value < 2.2e-16 for all tests. Wilcoxon results are saved as txt files.
+
+violin.df.shared: shared targets
+violin.df.lsc.unique: "LSC unique"
+violin.df.lsk.unique: "LSK unique"
+
+```{r wilcox}
+# LSC vs LSK targets
+wilcox.lsc.vs.lsk <- wilcox.test(violin.df.lsc.unique$log2FoldChange, violin.df.lsk.unique$log2FoldChange,
+            alternative = "greater")
+
+# Shared targets vs LSC specific targets
+wilcox.shared.vs.lsc <- wilcox.test(violin.df.shared$log2FoldChange, violin.df.lsc.unique$log2FoldChange,
+            alternative = "less")
+
+# Shared targets vs LSK specific targets
+wilcox.shared.vs.lsk <- wilcox.test(violin.df.shared$log2FoldChange, violin.df.lsk.unique$log2FoldChange,
+            alternative = "greater")
+
+capture.output(wilcox.lsc.vs.lsk, file=paste0(folder, "wilcox.lsc.vs.lsk_", name.type, ".txt"))
+capture.output(wilcox.shared.vs.lsc, file=paste0(folder, "wilcox.shared.vs.lsc_", name.type, ".txt"))
+capture.output(wilcox.shared.vs.lsk, file=paste0(folder, "wilcox.shared.vs.lsk_", name.type, ".txt"))
+```
+
+For statistics, Han suggested to plot these values as CDF plot to see whether or not they are similar to each other.
+
+Data: 
+violin.df.shared #DESeq2 results for shared targets
+violin.df.lsc.unique #DESeq2 results for LSC-unique targets
+violin.df.lsk.unique #DESeq2 results for LSK-unique targets
+
+```{r CDF}
+ecdf.shared.targets <- ecdf(violin.df.shared$log2FoldChange)
+ecdf.lsc.targets <- ecdf(violin.df.lsc.unique$log2FoldChange)
+ecdf.lsk.targets <- ecdf(violin.df.lsk.unique$log2FoldChange)
+
+pdf(paste0(folder, "LSC_vs_LSK_", name.type, "_CDF-KC.pdf"), 6, 6, useDingbats = F )
+par(mar = c(5,5,5,5))
+plot(ecdf.shared.targets, verticals=TRUE, do.points=FALSE, col="red", lwd = 2, xlim=c(-10, 10), 
+      main= "Shared (red) LSC (green) LSK (blue)",
+      xlab="Log2fold change (LSC/LSK)",
+      ylab="CDF",
+      cex.lab=1.5, cex.axis=1.5, cex.main=1.5, cex.sub=1.5)
+plot(ecdf.lsc.targets, verticals=TRUE, do.points=FALSE, add=TRUE, col="darkolivegreen4", lwd = 2)
+plot(ecdf.lsk.targets, verticals=TRUE, do.points=FALSE, add=TRUE, col="blue", lwd = 2)
+dev.off()
+```
+
+## Produce plot for length 3'UTR vs gene expression
+## Purpose: RBMX and MSI2 are appearing in LSK HOMER results. Why?
+## Hypothesis: LSK 3'UTR is longer than LSC. Longer UTR may have secondary structure that occludes MSI2 binding site, which is why MSI2 motif found more frequent in LSK but in LSC (if it has shorter 3'UTR), MSI2 can bind more easily to shorter 3'UTR.
+
+Get normalized counts from DESeq2.
+
+```{r normalized counts}
+# Get normalized counts
+dds.est.size.factors <- estimateSizeFactors(dds)
+dds.normalized.counts <- counts(dds.est.size.factors , normalized=TRUE) # get normalized counts
+dds.normalized.counts.with.gene.symbols <- entrezid.to.genesymbol(as.data.frame(dds.normalized.counts)) # convert entrez id to gene symbols
+```
+
+
+Read in 3'UTR.
+
+```{r 3UTR}
+setwd("/Users/chuk/Documents/3UTR_Homer_LSC-unique_vs_LSK-unique/output/")
+lsk.all.utr <- read.csv("lsk_unique_MIG_all_three_utr_seq_filtered_by_difffreq_0.1.csv")
+lsc.all.utr <- read.csv("lsc_unique_MIG_all_three_utr_seq_filtered_by_difffreq_0.1.csv")
+
+lsk.longest.utr <- read.csv("lsk_unique_MIG_longest_three_utr_seq_filtered_by_difffreq_0.1.csv")
+lsc.longest.utr <- read.csv("lsc_unique_MIG_longest_three_utr_seq_filtered_by_difffreq_0.1.csv")
+```
+
+Subset unique targets to the normalized read counts and plot length of 3'UTR vs. normalized read counts.
+
+```{r subset}
+ensembl = useMart("ensembl", dataset="mmusculus_gene_ensembl")
+
+gene.id.to.ensembl.id <- function(res) {
+  
+  gene.symbols <- getBM(
+  values = res$gene,
+  filters = c("external_gene_name"),
+  attributes = c("entrezgene", "ensembl_gene_id", "external_gene_name", "description"),
+  mart = ensembl)
+  
+  gene.symbols.reordered <- gene.symbols [match(res$gene, gene.symbols$external_gene_name),]
+  
+  res$ensembl.id <- gene.symbols.reordered$ensembl_gene_id
+  
+  return(res)
+  
+}
+
+dds.normalized.counts.with.ensembl.id <- gene.id.to.ensembl.id(dds.normalized.counts.with.gene.symbols)
+
+# Match order of genes and combine normalized read count and length of 3'UTR into one dataframe
+create.plotting.df <- function(normalized.count.df, utr.df, cell.type) {
+  
+  utr.df.reordered <- utr.df [ match(normalized.count.df$ensembl.id, utr.df$ensembl_gene_id), ] # match order of ensembl IDs in UTR data
+  cell.type.only <- normalized.count.df [ , grepl(cell.type, colnames(normalized.count.df))]
+  cell.type.mean <- apply(cell.type.only, 1, mean)
+  cell.type.mean.and.length.of.UTR <- data.frame(mean=cell.type.mean, length=utr.df.reordered$length.of.seq)
+  
+  return(cell.type.mean.and.length.of.UTR)
+  
+}
+
+# Subset normalized counts for longest 3'UTR
+lsc.longest.utr.normalized.counts <- dds.normalized.counts.with.ensembl.id [ dds.normalized.counts.with.ensembl.id$ensembl.id %in% lsc.longest.utr$ensembl_gene_id, ]
+lsk.longest.utr.normalized.counts <- dds.normalized.counts.with.ensembl.id [ dds.normalized.counts.with.ensembl.id$ensembl.id %in% lsk.longest.utr$ensembl_gene_id, ]
+
+lsc.longest.utr <- lsc.longest.utr [ lsc.longest.utr$ensembl_gene_id %in% lsc.longest.all.utr.normalized.counts$ensembl.id, ]
+lsk.longest.utr <- lsk.longest.utr [ lsk.longest.utr$ensembl_gene_id %in% lsk.longest.all.utr.normalized.counts$ensembl.id, ]
+lsc.mean.and.length.of.longest.UTR <- create.plotting.df(lsc.longest.utr.normalized.counts, lsc.longest.utr, "LSC")
+lsk.mean.and.length.of.longest.UTR <- create.plotting.df(lsk.longest.utr.normalized.counts, lsk.longest.utr, "LSK")
+
+lsc.mean.and.length.of.longest.UTR$cell.type <- "LSC"
+lsk.mean.and.length.of.longest.UTR$cell.type <- "LSK"
+mean.and.length.of.longest.UTR <- rbind(lsc.mean.and.length.of.longest.UTR, lsk.mean.and.length.of.longest.UTR)
+mean.and.length.of.longest.UTR$shape <- "value"
+
+mean.and.length.of.longest.UTR [ mean.and.length.of.longest.UTR$length > 10000, ]$length <- 10000 # get rid of outliers by relabeling them as 10000
+mean.and.length.of.longest.UTR [ mean.and.length.of.longest.UTR$length == 10000, ]$shape <- "outlier" # get rid of outliers by relabeling them as 10000
+
+mean.and.length.of.longest.UTR [ mean.and.length.of.longest.UTR$mean > 5e4, ]$mean <- 5e4 # get rid of outliers by relabeling them as 10000
+mean.and.length.of.longest.UTR [ mean.and.length.of.longest.UTR$mean == 5e4, ]$shape <- "outlier" # get rid of outliers by relabeling them as 10000
+mean.and.length.of.longest.UTR$shape <- as.factor(mean.and.length.of.longest.UTR$shape)
+mean.and.length.of.longest.UTR$shape <- relevel(mean.and.length.of.longest.UTR$shape, "value")
+
+# Plot normalized counts vs length of UTR
+ggplot(mean.and.length.of.longest.UTR, aes(x=length, y=mean, color=cell.type)) + geom_point(aes(shape=shape)) + scale_shape_manual(values = c(19, 2)) +
+  ggtitle("MIG, longest 3'UTR, diff freq > 0.1")
+
+ggplot(mean.divide.length, aes(x=ratio, color=cell.type)) +
+  geom_histogram(binwidth=1, fill="white", alpha=0.5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,94 @@
+---
+title: "Edit sites per replicate"
+author: "Karen Chu"
+date: "12/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(openxlsx)
+```
+
+Set working directory.
+
+```{r setwd}
+folder <- "/Users/karen/mount/chuk/MSI2_RRM_deletion_and_5_mutations/Project_08269_F/"
+```
+
+Import data.
+
+```{r import}
+setwd(folder)
+
+rrm.1 <- read.xlsx("MOLM13_MSI2_RRM_deletion-R1_sample_snp_counts.xlsx")
+rrm.2 <- read.xlsx("MOLM13_MSI2_RRM_deletion-R2_sample_snp_counts.xlsx")
+rrm.3 <- read.xlsx("MOLM13_MSI2_RRM_deletion-R3_sample_snp_counts.xlsx")
+
+mut.1 <- read.xlsx("MOLM13_MSI2_5mut-R1_sample_snp_counts.xlsx")
+mut.2 <- read.xlsx("MOLM13_MSI2_5mut-R2_sample_snp_counts.xlsx")
+mut.3 <- read.xlsx("MOLM13_MSI2_5mut-R3_sample_snp_counts.xlsx")
+```
+
+Get number of edit sites.
+
+```{r num edit sites}
+rrm.1.filter <- rrm.1 [ rrm.1$dbsnp == "", ]
+rrm.2.filter <- rrm.2 [ rrm.2$dbsnp == "", ]
+rrm.3.filter <- rrm.3 [ rrm.3$dbsnp == "", ]
+
+mut.1.filter <- mut.1 [ mut.1$dbsnp == "", ]
+mut.2.filter <- mut.2 [ mut.2$dbsnp == "", ]
+mut.3.filter <- mut.3 [ mut.3$dbsnp == "", ]
+
+cat("RRM deletion Sample 1, number of edit sites: ", nrow(rrm.1.filter), "\n" )
+cat("RRM deletion Sample 2, number of edit sites: ", nrow(rrm.2.filter), "\n" )
+cat("RRM deletion Sample 3, number of edit sites: ", nrow(rrm.3.filter), "\n" )
+
+cat("5' mutation Sample 1, number of edit sites: ", nrow(mut.1.filter), "\n" )
+cat("5' mutation Sample 2, number of edit sites: ", nrow(mut.2.filter), "\n" )
+cat("5' mutation Sample 3, number of edit sites: ", nrow(mut.3.filter) )
+```
+
+Write files.
+
+```{r write}
+setwd(folder)
+
+write.xlsx(rrm.1.filter, "MOLM13_MSI2_RRM_deletion-R1_sample_snp_counts_dbsnp_filtered_out.xlsx")
+write.xlsx(rrm.2.filter, "MOLM13_MSI2_RRM_deletion-R2_sample_snp_counts_dbsnp_filtered_out.xlsx")
+write.xlsx(rrm.3.filter, "MOLM13_MSI2_RRM_deletion-R3_sample_snp_counts_dbsnp_filtered_out.xlsx")
+
+write.xlsx(mut.1.filter, "MOLM13_MSI2_5mut-R1_sample_snp_counts_dbsnp_filtered_out.xlsx")
+write.xlsx(mut.2.filter, "MOLM13_MSI2_5mut-R2_sample_snp_counts_dbsnp_filtered_out.xlsx")
+write.xlsx(mut.3.filter, "MOLM13_MSI2_5mut-R3_sample_snp_counts_dbsnp_filtered_out.xlsx")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

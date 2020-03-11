@@ -1,0 +1,229 @@
+---
+title: "Fig1B,C Significance testing on edit site and edit freq"
+author: "Karen Chu"
+date: "1/16/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(openxlsx)
+library(ggplot2)
+```
+
+Workdir
+
+```{r work dir}
+output.dir <- "~/mount/chuk/Fig1B_C_Significance_test_on_edit_sites_and_edit_freq/output/"
+```
+
+
+Import data.
+
+```{r import}
+molm <- read.xlsx("~/mount/chuk/data_resources/Yuheng_old_files/molm13_snp_counts_dedupped.xlsx")
+molm$genomic.coords <- paste( molm$seqnames, molm$start, sep=".")
+```
+
+Read in vcf files.
+
+```{r vcf}
+ada.vcf.2 <-read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample2_FinalR.vcf", stringsAsFactors = FALSE)
+ada.vcf.5 <-read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample5_FinalR.vcf", stringsAsFactors = FALSE)
+ada.vcf.8 <-read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample8_FinalR.vcf", stringsAsFactors = FALSE)
+
+dcd.vcf.3 <- read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample3_FinalR.vcf", stringsAsFactors = FALSE)
+dcd.vcf.6 <- read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample6_FinalR.vcf", stringsAsFactors = FALSE)
+dcd.vcf.9 <- read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample9_FinalR.vcf", stringsAsFactors = FALSE)
+
+mig.vcf.1 <- read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample1_FinalR.vcf", stringsAsFactors = FALSE)
+mig.vcf.4 <- read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample4_FinalR.vcf", stringsAsFactors = FALSE)
+mig.vcf.7 <- read.table("~/mount/luyuheng/MOLM13/vcf_files/Sample7_FinalR.vcf", stringsAsFactors = FALSE)
+```
+
+
+Get list of dbsnp.
+Result from below chunk: Yuheng's SNP file contains no dbsnps.
+
+```{r dbsnp}
+dbsnp.snp <- rbind ( ada.vcf.2 [ grepl("rs", ada.vcf.2$V3), ],
+                   ada.vcf.5 [ grepl("rs", ada.vcf.5$V3), ],
+                   ada.vcf.8 [ grepl("rs", ada.vcf.8$V3), ],
+                   
+                   dcd.vcf.3 [ grepl("rs", dcd.vcf.3$V3), ],
+                   dcd.vcf.6 [ grepl("rs", dcd.vcf.6$V3), ],
+                   dcd.vcf.9 [ grepl("rs", dcd.vcf.9$V3), ],
+                   
+                   mig.vcf.1 [ grepl("rs", mig.vcf.1$V3), ],
+                   mig.vcf.4 [ grepl("rs", mig.vcf.4$V3), ],
+                   mig.vcf.7 [ grepl("rs", mig.vcf.7$V3), ] )
+
+dbsnp.snp$genomic.coords <- paste( dbsnp.snp$V1, dbsnp.snp$V2, sep="." )
+
+not.dbsnp <- rbind ( ada.vcf.2 [ grepl(".", ada.vcf.2$V3), ],
+                   ada.vcf.5 [ grepl(".", ada.vcf.5$V3), ],
+                   ada.vcf.8 [ grepl(".", ada.vcf.8$V3), ],
+                   
+                   dcd.vcf.3 [ grepl(".", dcd.vcf.3$V3), ],
+                   dcd.vcf.6 [ grepl(".", dcd.vcf.6$V3), ],
+                   dcd.vcf.9 [ grepl(".", dcd.vcf.9$V3), ],
+                   
+                   mig.vcf.1 [ grepl(".", mig.vcf.1$V3), ],
+                   mig.vcf.4 [ grepl(".", mig.vcf.4$V3), ],
+                   mig.vcf.7 [ grepl(".", mig.vcf.7$V3), ] )
+
+not.dbsnp$genomic.coords <- paste( not.dbsnp$V1, not.dbsnp$V2, sep="." )
+
+```
+
+For each replicate, obtain all edit sites with alt.counts > 0. This will give us the number of edit sites for ADA, MIG, and DCD in triplicates.
+
+```{r edit sites}
+ada.edit.sites.rep1 <- nrow( subset(molm, molm$`Sample_Hyper-dADAR_12617_IGO_08269_2.alt.count` > 0) )
+ada.edit.sites.rep2 <- nrow( subset(molm, molm$`Sample_Hyper-dADAR_121417_IGO_08269_5.alt.count` > 0) )
+ada.edit.sites.rep3 <- nrow( subset(molm, molm$`Sample_Hyper-dADAR_121817_IGO_08269_8.alt.count` > 0) )
+
+dcd.edit.sites.rep1 <- nrow( subset(molm, molm$`Sample_Hyper-dADAR-DCD_12617_IGO_08269_3.alt.count` > 0) )
+dcd.edit.sites.rep2 <- nrow( subset(molm, molm$`Sample_Hyper-dADAR-DCD_121417_IGO_08269_6.alt.count` > 0) )
+dcd.edit.sites.rep3 <- nrow( subset(molm, molm$`Sample_Hyper-dADAR-DCD_121817_IGO_08269_9.alt.count` > 0) )
+
+mig.edit.sites.rep1 <- nrow( subset(molm, molm$Sample_MIG_12617_IGO_08269_1.alt.count > 0) )
+mig.edit.sites.rep2 <- nrow( subset(molm, molm$Sample_MIG_121417_IGO_08269_4.alt.count > 0) )
+mig.edit.sites.rep3 <- nrow( subset(molm, molm$Sample_MIG_121817_IGO_08269_7.alt.count > 0) )
+```
+
+Plot barplot.
+
+```{r barplot}
+setwd(output.dir)
+
+mean.ada.edit.sites <- mean( ada.edit.sites.rep1, ada.edit.sites.rep2, ada.edit.sites.rep3 )
+mean.dcd.edit.sites <- mean( dcd.edit.sites.rep1, dcd.edit.sites.rep2, dcd.edit.sites.rep3 )
+mean.mig.edit.sites <- mean( mig.edit.sites.rep1, mig.edit.sites.rep2, mig.edit.sites.rep3 )
+
+plot.input <- data.frame( sample = c( rep("MIG", 3), rep("DCD", 3), rep("ADA", 3)),
+                          num.edit.sites = as.numeric( c( mig.edit.sites.rep1, mig.edit.sites.rep2, mig.edit.sites.rep3,
+                                              dcd.edit.sites.rep1, dcd.edit.sites.rep2, dcd.edit.sites.rep3,
+                                              ada.edit.sites.rep1, ada.edit.sites.rep2, ada.edit.sites.rep3 ) ) )
+
+mig.ada <- plot.input [ plot.input$sample == "MIG" | plot.input$sample=="ADA",]
+dcd.ada <- plot.input [ plot.input$sample == "DCD" | plot.input$sample == "ADA",]
+mig.dcd <- plot.input [ plot.input$sample == "MIG" | plot.input$sample == "DCD",]
+wilcox.test(num.edit.sites ~ sample, data=mig.ada, alternative="greater")
+wilcox.test(num.edit.sites ~ sample, data=dcd.ada, alternative="greater")
+wilcox.test(num.edit.sites ~ sample, data=mig.dcd)
+
+write.csv(plot.input, "MOLM13_edit.site_per_replicate_no_betabinom_test.csv", row.names = FALSE)
+
+
+# When MIG.DCD into one category
+plot.input <- data.frame( sample = c( rep("MIG.DCD", 6), rep("ADA", 3)),
+                          num.edit.sites = as.numeric( c( mig.edit.sites.rep1, mig.edit.sites.rep2, mig.edit.sites.rep3,
+                                              dcd.edit.sites.rep1, dcd.edit.sites.rep2, dcd.edit.sites.rep3,
+                                              ada.edit.sites.rep1, ada.edit.sites.rep2, ada.edit.sites.rep3 ) ) )
+
+
+# p<- ggplot(plot.input, aes(x=sample, y=num.edit.sites, fill=sample)) + 
+#   geom_bar(stat="identity", color="black") +
+#   theme_classic() +
+#   scale_fill_manual(values=c('black', 'red', 'blue'))
+
+wilcox.test(num.edit.sites ~ sample, data=plot.input, alternative="greater")
+```
+
+Edit frequency.
+
+```{r edit freq}
+setwd(output.dir)
+
+adar.edit.freq.1 <- molm$`Sample_Hyper-dADAR_12617_IGO_08269_2.alt.count` / 
+  ( molm$`Sample_Hyper-dADAR_12617_IGO_08269_2.ref.count` + molm$`Sample_Hyper-dADAR_12617_IGO_08269_2.alt.count` )
+adar.edit.freq.2 <- molm$`Sample_Hyper-dADAR_121417_IGO_08269_5.alt.count` / 
+  ( molm$`Sample_Hyper-dADAR_121417_IGO_08269_5.ref.count` + molm$`Sample_Hyper-dADAR_121417_IGO_08269_5.alt.count` )
+adar.edit.freq.3<- molm$`Sample_Hyper-dADAR_121817_IGO_08269_8.alt.count` / 
+  ( molm$`Sample_Hyper-dADAR_121817_IGO_08269_8.ref.count` + molm$`Sample_Hyper-dADAR_121817_IGO_08269_8.alt.count` )
+
+dcd.edit.freq.1 <- molm$`Sample_Hyper-dADAR-DCD_12617_IGO_08269_3.alt.count` /
+  ( molm$`Sample_Hyper-dADAR-DCD_12617_IGO_08269_3.ref.count` + molm$`Sample_Hyper-dADAR-DCD_12617_IGO_08269_3.alt.count` )
+dcd.edit.freq.2 <- molm$`Sample_Hyper-dADAR-DCD_121417_IGO_08269_6.alt.count` / 
+  ( molm$`Sample_Hyper-dADAR-DCD_121417_IGO_08269_6.ref.count` + molm$`Sample_Hyper-dADAR-DCD_121417_IGO_08269_6.alt.count` )
+dcd.edit.freq.3 <- molm$`Sample_Hyper-dADAR-DCD_121817_IGO_08269_9.alt.count` / 
+  ( molm$`Sample_Hyper-dADAR-DCD_121817_IGO_08269_9.ref.count` + molm$`Sample_Hyper-dADAR-DCD_121817_IGO_08269_9.alt.count` )
+
+mig.edit.freq.1 <- molm$Sample_MIG_121417_IGO_08269_4.alt.count / 
+  ( molm$Sample_MIG_121417_IGO_08269_4.ref.count + molm$Sample_MIG_121417_IGO_08269_4.alt.count )
+mig.edit.freq.2 <- molm$Sample_MIG_121817_IGO_08269_7.alt.count / 
+  ( molm$Sample_MIG_121817_IGO_08269_7.ref.count + molm$Sample_MIG_121817_IGO_08269_7.alt.count )
+mig.edit.freq.3 <- molm$Sample_MIG_12617_IGO_08269_1.alt.count /
+  ( molm$Sample_MIG_12617_IGO_08269_1.ref.count + molm$Sample_MIG_12617_IGO_08269_1.alt.count )
+
+# NaN is created from 0/0 so replace NaN with zero
+adar.edit.freq.1 [ is.na(adar.edit.freq.1) ] <- 0
+adar.edit.freq.2 [ is.na(adar.edit.freq.2) ] <- 0
+adar.edit.freq.3 [ is.na(adar.edit.freq.3) ] <- 0
+dcd.edit.freq.1 [ is.na(dcd.edit.freq.1) ] <- 0
+dcd.edit.freq.2 [ is.na(dcd.edit.freq.2) ] <- 0
+dcd.edit.freq.3 [ is.na(dcd.edit.freq.3) ] <- 0
+mig.edit.freq.1 [ is.na(mig.edit.freq.1) ] <- 0
+mig.edit.freq.2 [ is.na(mig.edit.freq.2) ] <- 0
+mig.edit.freq.3 [ is.na(mig.edit.freq.3) ] <- 0
+
+test.input <- data.frame( MIG.rep.1 = mig.edit.freq.1,
+                          MIG.rep.2 = mig.edit.freq.2,
+                          MIG.rep.3 = mig.edit.freq.3,
+                          DCD.rep.1 = dcd.edit.freq.1,
+                          DCD.rep.2 = dcd.edit.freq.2,
+                          DCD.rep.3 = dcd.edit.freq.3,
+                          ADA.rep.1 = adar.edit.freq.1,
+                          ADA.rep.2 = adar.edit.freq.2,
+                          ADA.rep.3 = adar.edit.freq.3 )
+
+write.csv(test.input, "MOLM13_edit.freq_per_replicate_from_SNP_count_no.beta.binom.step.csv", row.names = FALSE)
+```
+
+Wilcoxon rank sum test.
+
+```{r test} 
+mean.ada.input <- mean( c(adar.edit.freq.1, adar.edit.freq.2, adar.edit.freq.3 ))
+mean.dcd.input <- mean( c(dcd.edit.freq.1, dcd.edit.freq.2, dcd.edit.freq.3 ))
+mean.mig.input <- mean( c(mig.edit.freq.1, mig.edit.freq.2, mig.edit.freq.3 ))
+
+wilcoxon.ada.input <- c( adar.edit.freq.1, adar.edit.freq.2, adar.edit.freq.3 )
+wilcoxon.dcd.input <- c( dcd.edit.freq.1, dcd.edit.freq.2, dcd.edit.freq.3 )
+wilcoxon.mig.input <- c( mig.edit.freq.1, mig.edit.freq.2, mig.edit.freq.3 )
+
+
+wilcox.test(wilcoxon.ada.input, wilcoxon.dcd.input, alternative="greater")
+wilcox.test(wilcoxon.ada.input, wilcoxon.mig.input, alternative="greater")
+wilcox.test(log2(wilcoxon.dcd.input+1), log2(wilcoxon.mig.input+1) )
+```
+
+Spoke with Rui about the reason why MIG and DCD are coming up as significant in wilcoxon test.
+Number of zeroes different in MIG and DCD.
+For example MIG with 1000 zeroes but DCD with 800 zeroe would mean DCD starts with 1, 2, 3, in the rank much earlier than MIG.
+Greater sample size means more power to detect smaller differences.
+
+```{r sample}
+sample.dcd <- sample(wilcoxon.dcd.input, 10000)
+sample.mig <- sample(wilcoxon.mig.input, 10000)
+
+
+sample.dcd <- sample(wilcoxon.dcd.input.no.zero, 1000)
+sample.mig <- sample(wilcoxon.mig.input.no.zero, 1000)
+
+
+wilcox.test(sample.dcd, sample.mig)
+```
+
+
+
+
+
+
+
+

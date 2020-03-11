@@ -1,0 +1,706 @@
+---
+title: "View LSC LSK edit sites"
+author: "Karen Chu"
+date: "8/5/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(openxlsx)
+library(GenomicRanges)
+library(ggplot2)
+library(reshape2)
+library("biomaRt")
+library(dplyr)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library("GenomicFeatures")
+library(GenomicFeatures)
+library(tidyr)
+library(BSgenome.Mmusculus.UCSC.mm10)
+```
+
+```{r data}
+#setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/View_LSC_and_LSK_edit_sites_in_3UTR/data/")
+#setwd("/Users/chuk/sshfs_mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data")
+setwd("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/")
+lsk <- read.csv("lsk_with_distance.csv")
+lsc <- read.csv("lsc_with_distance.csv")
+```
+
+#```{r betabinom data}
+#setwd("/Users/chuk/sshfs_mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/Yuheng_FinalVCF_files/")
+#setwd("/Users/chuk/sshfs_mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/")
+setwd("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/")
+
+hoxa9.betabinom <- read.csv("Mouse_snp_counts_significance_LSC_vs_LSK_Hoxa9.csv")
+ikzf2.betabinom <- read.csv("Mouse_snp_counts_significance_LSC_vs_LSK_Ikzf2.csv")
+myb.betabinom <- read.csv("Mouse_snp_counts_significance_LSC_vs_LSK_Myb.csv")
+
+# png("betabinom_hoxa9_pvalue_hist.png", 1000, 1000)
+# hist(hoxa9$p.value, breaks=100, cex=3, cex.axis=3, cex.main=3, cex.lab=3)
+# dev.off()
+# 
+# png("betabinom_hoxa9_padj_hist.png", 1000, 1000)
+# hist(hoxa9$p.adj, breaks=100, cex=3, cex.axis=3, cex.main=3, cex.lab=3)
+# dev.off()
+# 
+# png("betabinom_ikzf2_pvalue_hist.png", 1000, 1000)
+# hist(ikzf2$p.value, breaks=100, cex=3, cex.axis=3, cex.main=3, cex.lab=3)
+# dev.off()
+# 
+# png("betabinom_ikzf2_padj_hist.png", 1000, 1000)
+# hist(ikzf2$p.adj, breaks=100, cex=3, cex.axis=3, cex.main=3, cex.lab=3)
+# dev.off()
+# 
+# png("betabinom_myb_pvalue_hist.png", 1000, 1000)
+# hist(myb$p.value, breaks=100, cex=3, cex.axis=3, cex.main=3, cex.lab=3)
+# dev.off()
+# 
+# png("betabinom_myb_padj_hist.png", 1000, 1000)
+# hist(myb$p.adj, breaks=100, cex=3, cex.axis=3, cex.main=3, cex.lab=3)
+# dev.off()
+#```
+
+Plot read counts for non-significant edit sites.
+
+#```{r non-sig}
+library(DESeq2)
+
+vst.counts <- function(df.input) {
+  
+  df.input$genomic.coords <- paste(df.input$seqnames, df.input$start, sep="_")
+  df.input$genomic.coords <- ifelse( df.input$p.adj < 0.05, paste(df.input$genomic.coords, "sig", sep="_"), df.input$genomic.coords)
+  df.input.dds.prep <- df.input[ ,grepl("count", colnames(df.input))]
+  cell.name <- ifelse(grepl("DsRed", colnames(df.input.dds.prep)), "LSC", "LSK")
+  coldata <- data.frame(Sample = as.factor(colnames(df.input.dds.prep)), cell = as.factor(cell.name))
+  df.input.dds <- DESeqDataSetFromMatrix(countData=as.matrix(df.input.dds.prep), colData=coldata, design=~cell)
+  df.input.vst <- varianceStabilizingTransformation(df.input.dds) 
+  # -- note: fitType='parametric', but the dispersion trend was not well captured by the function: y = a/x + b, and a local regression fit was automatically substituted. specify fitType='local' or 'mean' to avoid this message next time.
+  
+  df.input.vst.matrix <- as.data.frame( assay(df.input.vst) )
+  rownames(df.input.vst.matrix) <- df.input$genomic.coords
+  
+  ref.lsc.count.index <- df.input.vst.matrix[ ,grepl("DsRed_IGO.*ref.count", colnames(df.input.vst.matrix)) ]
+  alt.lsc.count.index <- df.input.vst.matrix[ ,grepl("DsRed_IGO.*alt.count", colnames(df.input.vst.matrix)) ]
+  ref.lsk.count.index <- df.input.vst.matrix[ ,grepl("IGO.*ref.count", colnames(df.input.vst.matrix)) & 
+                                                       !grepl("DsRed", colnames(df.input.vst.matrix)) ]
+  alt.lsk.count.index <- df.input.vst.matrix[ ,grepl("IGO.*alt.count", colnames(df.input.vst.matrix)) & 
+                                                       !grepl("DsRed", colnames(df.input.vst.matrix)) ]
+  
+  
+  heatmap.input <- cbind(ref.lsk.count.index, ref.lsc.count.index, alt.lsk.count.index, alt.lsc.count.index)
+  
+  return(heatmap.input)
+  
+}
+
+library(pheatmap)
+#setwd("/Users/chuk/sshfs_mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/Yuheng_FinalVCF_files/")
+setwd("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/")
+
+heatmap.input <- vst.counts(hoxa9.betabinom)
+png("Hoxa9_VST_counts.png", 1000, 1000)
+pheatmap( heatmap.input, cluster_cols = FALSE, cluster_rows = FALSE )
+dev.off()
+
+heatmap.input <- vst.counts(ikzf2.betabinom)
+png("Ikzf2_VST_counts.png", 1000, 1000)
+pheatmap( heatmap.input, cluster_cols = FALSE, cluster_rows = FALSE )
+dev.off()
+
+heatmap.input <- vst.counts(myb.betabinom)
+png("Myb_VST_counts.png", 1000, 1000)
+pheatmap( heatmap.input, cluster_cols = FALSE, cluster_rows = FALSE )
+dev.off()
+#```
+
+Prepare gff with 3'UTR data.
+
+```{r database}
+# gff = makeTxDbFromGFF("/Users/chuk/Documents/MSI2-SYNCRIP/data/gencode.vM19.annotation.gtf")
+# three.utr <- threeUTRsByTranscript(gff, use.names=TRUE)
+# three.utr.df <- as.data.frame(three.utr)
+# saveRDS(three.utr.df, "three.utr.df.RDS")
+three.utr.df <- readRDS("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/three.utr.df.RDS")
+```
+
+
+Identify MSI2 motifs.
+Ensembl gene IDs in mouse.
+Hoxa9 ENSMUSG00000038227
+Ikzf2 ENSMUSG00000025997
+Myb ENSMUSG00000019982
+
+#```{r msi2 motifs}
+setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/View_LSC_and_LSK_edit_sites_in_3UTR/data/HOMER_Molm13/homerResults/")
+msi2.motif <- t(as.matrix(read.table("motif1.motif", skip=1, header=FALSE, sep="\t")))
+
+# Get motif sequence
+get.motif.sequence <- function(motif.matrix) {
+  
+  rownames(motif.matrix) <- c("A", "C", "G", "T")
+  indices <- apply( motif.matrix, 2, which.max)
+  nucleotides.matching.indices <- rownames(motif.matrix)[indices]
+  motif.sequence <- paste(nucleotides.matching.indices,collapse="")
+  
+  return(motif.sequence)
+  
+}
+
+msi2.motif.sequence <- get.motif.sequence(msi2.motif)
+
+# Hoxa9, Ikzf2, Myb mouse sequence
+ensembl = useMart("ensembl",dataset="mmusculus_gene_ensembl")
+
+get.three.utr.seq <- function(ensembl.gene.id) {
+  
+  # Get 3'UTR sequences and length of sequence.
+  utr.seq <- getSequence(seqType="3utr",mart=ensembl,type="ensembl_gene_id",id=ensembl.gene.id)
+  utr.seq <- utr.seq [ utr.seq[,1] != "Sequence unavailable", ] # Remove sequence unavailable rows.
+  utr.seq$length.of.seq <- nchar(utr.seq[,1])
+  index.of.max.length <- match(max(utr.seq$length.of.seq), utr.seq$length.of.seq)
+  utr.seq.max.length <- utr.seq$`3utr`[index.of.max.length]
+  
+  return(utr.seq.max.length)
+
+}
+
+hoxa9.sequence <- get.three.utr.seq("ENSMUSG00000038227")
+ikzf2.sequence <- get.three.utr.seq("ENSMUSG00000025997")
+myb.sequence <- get.three.utr.seq("ENSMUSG00000019982")
+
+# PWM
+# Create position frequency matrix of motif file, calculate priors, and calculate position weight matrix.
+calculate.PWM <- function(matrix.of.HOMER.motif.results, utr.sequence) {
+  
+  ## Step 1: Create position frequency matrix of motif file.
+  # sums frequencies of A, C, G, T and saves as list
+  sum.of.nucleotides.at.each.nucleotide.position.in.motif.sequence <- lapply(colSums(matrix.of.HOMER.motif.results),function(x) rep(x, nrow(matrix.of.HOMER.motif.results))) 
+  
+  # unlists the list as a matrix with order the same as the transposed motif input file
+  scale.matrix <- matrix(unlist(sum.of.nucleotides.at.each.nucleotide.position.in.motif.sequence), nrow = nrow(matrix.of.HOMER.motif.results), ncol = ncol(matrix.of.HOMER.motif.results)) 
+  
+  # divide each frequency by sum of frequencies and then multiple by that huge scaling factor
+  motif.matrix <- 1000000000 * matrix.of.HOMER.motif.results / scale.matrix 
+  rownames(motif.matrix) <- c("A", "C", "G", "T")
+  motif.matrix <- round(motif.matrix)
+  
+  # Changes class of values in motif.matrix as "integer" rather than its original class, which is "numeric"
+  storage.mode(motif.matrix) <- "integer" 
+  
+  
+  ## Step 2: Calculate priors.
+  # counts the number of times a nucleotide appears in the sequence string
+  # 1 refers to the length of nucleotides to count frequency
+  utr.sequence.dnastring <- DNAStringSet(utr.sequence)
+  oligo.freq.df <- oligonucleotideFrequency(utr.sequence.dnastring, 1) 
+  
+  # sum of each nucleotide count, then divide by the total sum of all counts from all nucleotides; this gives you frequency of each nucleotide appearing in all the full exon sequences containing hypertribe edited site
+  priors <- colSums(oligo.freq.df)/sum(oligo.freq.df) 
+  
+  
+  ## Step 3: pwm = seems to be the log odds ratio = log( probability(pwm|motif) ) - log( probability(pwm|bkgrd) )
+  pwm <- PWM(motif.matrix, type="log2probratio", prior.params=priors) 
+  
+  # start and end are always 8 nucleotides apart; matched = list of sequences similar to the motif
+  matched <- lapply(utr.sequence.dnastring, function(x) matchPWM(pwm, x, min.score="90%", with.score=TRUE))
+  
+  # Position of sequences within the exons containing hypertribe sites that meet the required threshold used to determine similar binding motif patterns
+  matched.irangeslist <- IRangesList(lapply(matched, function(x) as(x, "IRanges"))) 
+  
+  return(list(matched, matched.irangeslist))
+  
+}
+
+msi2.motif.in.hoxa9 <-calculate.PWM(msi2.motif, hoxa9.sequence)
+msi2.motif.in.ikzf2 <-calculate.PWM(msi2.motif, ikzf2.sequence)
+msi2.motif.in.myb <-calculate.PWM(msi2.motif, myb.sequence)
+
+msi2.motif.in.hoxa9.df <- as.data.frame(msi2.motif.in.hoxa9)
+msi2.motif.in.ikzf2.df <- as.data.frame(msi2.motif.in.ikzf2)
+msi2.motif.in.myb.df <- as.data.frame(msi2.motif.in.myb)
+#```
+
+```{r save dataframes}
+#setwd("/Users/chuk/sshfs_mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/Yuheng_FinalVCF_files/")
+setwd("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/Yuheng_FinalVCF_files/")
+# write.csv(msi2.motif.in.hoxa9.df, "msi2.motif.in.hoxa9.df.csv")
+# write.csv(msi2.motif.in.ikzf2.df, "msi2.motif.in.ikzf2.df.csv")
+# write.csv(msi2.motif.in.myb.df, "msi2.motif.in.myb.df.csv")
+
+msi2.motif.in.hoxa9.df <- read.csv("msi2.motif.in.hoxa9.df.csv")
+msi2.motif.in.ikzf2.df <- read.csv("msi2.motif.in.ikzf2.df.csv")
+msi2.motif.in.myb.df <- read.csv("msi2.motif.in.myb.df.csv")
+```
+
+Google mouse ensembl id longest transcript to get ensembl ID.
+
+Hoxa9 ENSMUST00000048680.7
+Myb ENSMUST00000188495.7
+Ikzf2 ENSMUST00000027146.8
+
+```{r plot}
+# Plots MSI2-HyperTRIBE LSC and LSK edit sites onto transcript.
+# setwd() will define directory plots are saved to.
+# Upload LSC vs LSK betabinom statistical test data.
+df.significance.input <- read.csv("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/Mouse_snp_counts_significance_fpkm_LSC_vs_LSK.csv")
+padj.thres <- 0.1
+adar.index <- which( grepl("ADA.*count", colnames(df.significance.input)))
+df.significance <- cbind(df.significance.input[,c(1:9, 19:20)], df.significance.input[,adar.index])
+df.significance$sig <- ifelse( df.significance$p.adj < padj.thres, "sig", "not_sig")
+
+plot.edit.freq <- function(gene.name, ensembl.transcript.id, msi2.motif.in.gene.name,
+                           y.min, y.max) {
+  
+  # Subset data
+  df.sig.subset <- subset(df.significance, gene.symbol==gene.name)
+  gene.lsk <- subset(lsk, gene.symbol==gene.name)
+  gene.lsc <- subset(lsc, gene.symbol==gene.name)
+  gene.lsk <- gene.lsk [ !(gene.lsk$pos %in% df.sig.subset$pos), ]
+  gene.lsc <- gene.lsc [ !(gene.lsc$pos %in% df.sig.subset$pos), ]
+  
+  # Calculate alt freq for LSC, LSK, and shared sites
+  ref <- gene.lsk [ ,grepl("ADA.*ref.count", colnames(gene.lsk)) ]
+  alt <- gene.lsk [ ,grepl("ADA.*alt.count", colnames(gene.lsk)) ]
+  alt.freq <- alt / (alt + ref)
+  colnames(alt.freq) <- paste0(colnames(alt.freq), ".ALT.FREQ")
+  gene.lsk <- cbind(gene.lsk, alt.freq)
+  
+  ref <- gene.lsc [ ,grepl("ADA.*ref.count", colnames(gene.lsc)) ]
+  alt <- gene.lsc [ ,grepl("ADA.*alt.count", colnames(gene.lsc)) ]
+  alt.freq <- alt / (alt + ref)
+  colnames(alt.freq) <- paste0(colnames(alt.freq), ".ALT.FREQ")
+  gene.lsc <- cbind(gene.lsc, alt.freq)
+  
+  ref <- df.sig.subset [ ,grepl("ref.count", colnames(df.sig.subset)) ]
+  alt <- df.sig.subset [ ,grepl("alt.count", colnames(df.sig.subset)) ]
+  alt.freq <- alt / (alt + ref)
+  colnames(alt.freq) <- paste0(colnames(alt.freq), ".ALT.FREQ")
+  df.sig.subset <- cbind(df.sig.subset, alt.freq)
+  
+  # Get alt.freq indices
+  lsc.alt.freq.index.yuheng <- which( grepl("ALT.FREQ", colnames(gene.lsc)) )
+  lsk.alt.freq.index.yuheng <- which( grepl("ALT.FREQ", colnames(gene.lsk)) )
+  lsc.alt.freq.index <- which( grepl("LSC.*ALT.FREQ", colnames(df.sig.subset)) )
+  lsk.alt.freq.index <- which( grepl("LSK.*ALT.FREQ", colnames(df.sig.subset)) )
+  
+  df.sig.subset$lsc.alt.freq.mean <- apply( df.sig.subset[,lsc.alt.freq.index], 1, mean )
+  df.sig.subset$lsk.alt.freq.mean <- apply( df.sig.subset[,lsk.alt.freq.index], 1, mean )
+  alt.freq.index <- which( grepl("alt.freq.mean", colnames(df.sig.subset)) )
+  
+  sig.index <- which( df.sig.subset$sig=="sig" )
+  sig.pos <- df.sig.subset [ sig.index, ]$pos
+  sig.diff.freq <- df.sig.subset [ sig.index, ]$lsc.alt.freq
+  
+  gene.coords <- subset(three.utr.df, group_name==ensembl.transcript.id)
+  
+  # Plot
+  setwd("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/output/")
+  #setwd("/Users/chuk/sshfs_mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/")
+  
+  png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK_greenMSI2motif.png"), 1500, 1000)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(15,10,10,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), 
+       #ylim=c(-1*max(df.sig.subset[,alt.freq.index])-0.1, max(df.sig.subset[,alt.freq.index])+0.3),
+       ylim=c(y.min, y.max),
+       xlab="", ylab="Editing Frequency\n",
+       cex.lab=3, cex.axis=3, las=2,
+       yaxt='n', xaxt='n') # make y and x axis invisible
+  title(main=paste0("MSI2 binding at ", gene.name, " 3'UTR in LSC vs LSK; p-adjusted < ", padj.thres, "\n Lines: mean; Ticks every 500 bp"), cex.main=2)
+  
+  #segments(gene.lsc$pos, 0, gene.lsc$pos, df.sig.subset$lsc.alt.freq, col="red", lwd=5)
+  #segments(gene.lsk$pos, 0, gene.lsk$pos, (-1*df.sig.subset$lsk.alt.freq), col="blue", lwd=5)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 8, col="black") # 3'UTR black line
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="orange", lwd=8)
+  
+  text(x=sig.pos, y=sig.diff.freq+0.15, "*", cex=3) # Comment out for ikzf2
+ 
+  for (i in 1:nrow(df.sig.subset)) {
+
+    # Add the bar from x-axis to median point
+    segments( df.sig.subset$pos[i], 
+              0,
+              df.sig.subset$pos[i],
+              mean( as.numeric( df.sig.subset[i, lsc.alt.freq.index]) ),
+              col = "red", lwd=2)
+    segments( df.sig.subset$pos[i], 
+              0,
+              df.sig.subset$pos[i],
+              mean( as.numeric( -1*(df.sig.subset[i, lsk.alt.freq.index])) ),
+              col = "blue", lwd=2)
+  
+    points( rep( df.sig.subset$pos[i],3), df.sig.subset[ i, lsc.alt.freq.index], 
+            col="red4", pch=19, cex=0.75)
+    points( rep( df.sig.subset$pos[i],3), -1*(df.sig.subset[ i, lsk.alt.freq.index]), 
+            col="blue4", pch=19, cex=0.75)
+    
+    segments( df.sig.subset$pos[i]-20, 
+              mean( as.numeric( df.sig.subset[i, lsc.alt.freq.index]) ),
+              df.sig.subset$pos[i]+20,
+              mean( as.numeric( df.sig.subset[i, lsc.alt.freq.index]) ) )
+    segments( df.sig.subset$pos[i]-20, 
+              mean( as.numeric( -1*(df.sig.subset[i, lsk.alt.freq.index])) ),
+              df.sig.subset$pos[i]+20,
+              mean( as.numeric( -1*(df.sig.subset[i, lsk.alt.freq.index])) ) )
+
+  }
+  
+  for (i in 1:nrow(gene.lsc)) {
+
+      segments( gene.lsc$pos[i], 
+                0,
+                gene.lsc$pos[i],
+                mean( as.numeric( gene.lsc[i, lsc.alt.freq.index.yuheng]) ),
+                col="red", lwd=2)
+      
+      points( rep( gene.lsc$pos[i],3), gene.lsc[ i, lsc.alt.freq.index.yuheng], 
+              col="red4", pch=19, cex=0.75)
+      segments( gene.lsc$pos[i]-20, # Make 20 for Myb and Hoxa9 and 50 for Ikzf2
+                mean( as.numeric( gene.lsc[i, lsc.alt.freq.index.yuheng]) ),
+                gene.lsc$pos[i]+20,
+                mean( as.numeric( gene.lsc[i, lsc.alt.freq.index.yuheng]) ) )
+
+  }
+  
+    for (i in 1:nrow(gene.lsk)) {
+
+      if ( nrow(gene.lsk) == 0) { } else { 
+        
+              segments( gene.lsk$pos[i], 
+                        0,
+                        gene.lsk$pos[i],
+                        -1*(mean( as.numeric( gene.lsk[i, lsk.alt.freq.index.yuheng]) )),
+                        col="blue", lwd=2)
+        
+              points( rep( gene.lsk$pos[i],3), -1*(gene.lsk[ i, lsk.alt.freq.index.yuheng]), 
+                col="blue4", pch=19, cex=0.75)
+              segments( gene.lsk$pos[i]-20, 
+                -1*( mean( as.numeric( gene.lsk[i, lsk.alt.freq.index.yuheng]) ) ),
+                gene.lsk$pos[i]+20,
+                -1*( mean( as.numeric( gene.lsk[i, lsk.alt.freq.index.yuheng]) ) ) )
+        
+        }
+    
+    }
+  
+  axis(2, at=seq(-1,1,0.1), labels=c(rev(seq(0,1,0.1)), seq(0.1,1,0.1)), cex.axis=2) # y axis
+  axis(1, at=c(seq(gene.coords$start, gene.coords$end,500), gene.coords$end), 
+       labels=c(gene.coords$start, 
+                rep('', length(seq(gene.coords$start, gene.coords$end,500))-1),
+                gene.coords$end), cex.axis=2, las=1) # x axis
+  dev.off()
+  
+}
+
+plot.edit.freq("Hoxa9", "ENSMUST00000048680.7", msi2.motif.in.hoxa9.df, -0.25, 0.55)
+plot.edit.freq("Myb", "ENSMUST00000188495.7", msi2.motif.in.myb.df, -0.5, 0.75)
+#plot.edit.freq("Ikzf2", "ENSMUST00000027146.8", msi2.motif.in.ikzf2.df, -0.35, 0.7) # Need to change the width of the horizontal line
+```
+
+Do Ikzf2 individually.
+
+```{r ikzf2}
+# Plots MSI2-HyperTRIBE LSC and LSK edit sites onto transcript.
+# setwd() will define directory plots are saved to.
+# Upload LSC vs LSK betabinom statistical test data.
+df.significance.input <- read.csv("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/Mouse_snp_counts_significance_fpkm_LSC_vs_LSK.csv")
+padj.thres <- 0.1
+adar.index <- which( grepl("ADA.*count", colnames(df.significance.input)))
+df.significance <- cbind(df.significance.input[,c(1:9, 19:20)], df.significance.input[,adar.index])
+df.significance$sig <- ifelse( df.significance$p.adj < padj.thres, "sig", "not_sig")
+
+plot.edit.freq <- function(gene.name, ensembl.transcript.id, msi2.motif.in.gene.name,
+                           y.min, y.max) {
+  
+  # Subset data
+  df.sig.subset <- subset(df.significance, gene.symbol==gene.name)
+  gene.lsk <- subset(lsk, gene.symbol==gene.name)
+  gene.lsc <- subset(lsc, gene.symbol==gene.name)
+  gene.lsk <- gene.lsk [ !(gene.lsk$pos %in% df.sig.subset$pos), ]
+  gene.lsc <- gene.lsc [ !(gene.lsc$pos %in% df.sig.subset$pos), ]
+  
+  # Calculate alt freq for LSC, LSK, and shared sites
+  ref <- gene.lsk [ ,grepl("ADA.*ref.count", colnames(gene.lsk)) ]
+  alt <- gene.lsk [ ,grepl("ADA.*alt.count", colnames(gene.lsk)) ]
+  alt.freq <- alt / (alt + ref)
+  colnames(alt.freq) <- paste0(colnames(alt.freq), ".ALT.FREQ")
+  gene.lsk <- cbind(gene.lsk, alt.freq)
+  
+  ref <- gene.lsc [ ,grepl("ADA.*ref.count", colnames(gene.lsc)) ]
+  alt <- gene.lsc [ ,grepl("ADA.*alt.count", colnames(gene.lsc)) ]
+  alt.freq <- alt / (alt + ref)
+  colnames(alt.freq) <- paste0(colnames(alt.freq), ".ALT.FREQ")
+  gene.lsc <- cbind(gene.lsc, alt.freq)
+  
+  ref <- df.sig.subset [ ,grepl("ref.count", colnames(df.sig.subset)) ]
+  alt <- df.sig.subset [ ,grepl("alt.count", colnames(df.sig.subset)) ]
+  alt.freq <- alt / (alt + ref)
+  colnames(alt.freq) <- paste0(colnames(alt.freq), ".ALT.FREQ")
+  df.sig.subset <- cbind(df.sig.subset, alt.freq)
+  
+  # Get alt.freq indices
+  lsc.alt.freq.index.yuheng <- which( grepl("ALT.FREQ", colnames(gene.lsc)) )
+  lsk.alt.freq.index.yuheng <- which( grepl("ALT.FREQ", colnames(gene.lsk)) )
+  lsc.alt.freq.index <- which( grepl("LSC.*ALT.FREQ", colnames(df.sig.subset)) )
+  lsk.alt.freq.index <- which( grepl("LSK.*ALT.FREQ", colnames(df.sig.subset)) )
+  
+  df.sig.subset$lsc.alt.freq.mean <- apply( df.sig.subset[,lsc.alt.freq.index], 1, mean )
+  df.sig.subset$lsk.alt.freq.mean <- apply( df.sig.subset[,lsk.alt.freq.index], 1, mean )
+  alt.freq.index <- which( grepl("alt.freq.mean", colnames(df.sig.subset)) )
+  
+  sig.index <- which( df.sig.subset$sig=="sig" )
+  sig.pos <- df.sig.subset [ sig.index, ]$pos
+  sig.diff.freq <- df.sig.subset [ sig.index, ]$lsc.alt.freq
+  
+  gene.coords <- subset(three.utr.df, group_name==ensembl.transcript.id)
+  
+  # Plot
+  setwd("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/output/")
+  #setwd("/Users/chuk/sshfs_mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/")
+  
+  png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK_greenMSI2motif.png"), 1500, 1000)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(15,10,10,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), 
+       #ylim=c(-1*max(df.sig.subset[,alt.freq.index])-0.1, max(df.sig.subset[,alt.freq.index])+0.3),
+       ylim=c(y.min, y.max),
+       xlab="", ylab="Editing Frequency\n",
+       cex.lab=3, cex.axis=3, las=2,
+       yaxt='n', xaxt='n') # make y and x axis invisible
+  title(main=paste0("MSI2 binding at ", gene.name, " 3'UTR in LSC vs LSK; p-adjusted < ", padj.thres, "\n Lines: mean; Ticks every 1000 bp"), cex.main=2)
+  
+  #segments(gene.lsc$pos, 0, gene.lsc$pos, df.sig.subset$lsc.alt.freq, col="red", lwd=5)
+  #segments(gene.lsk$pos, 0, gene.lsk$pos, (-1*df.sig.subset$lsk.alt.freq), col="blue", lwd=5)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 8, col="black") # 3'UTR black line
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="orange", lwd=8)
+  
+  #text(x=sig.pos, y=sig.diff.freq+0.15, "*", cex=3) # Comment out for ikzf2
+ 
+  for (i in 1:nrow(df.sig.subset)) {
+
+    # Add the bar from x-axis to median point
+    segments( df.sig.subset$pos[i], 
+              0,
+              df.sig.subset$pos[i],
+              mean( as.numeric( df.sig.subset[i, lsc.alt.freq.index]) ),
+              col = "red", lwd=2)
+    segments( df.sig.subset$pos[i], 
+              0,
+              df.sig.subset$pos[i],
+              mean( as.numeric( -1*(df.sig.subset[i, lsk.alt.freq.index])) ),
+              col = "blue", lwd=2)
+  
+    points( rep( df.sig.subset$pos[i],3), df.sig.subset[ i, lsc.alt.freq.index], 
+            col="red4", pch=19, cex=0.75)
+    points( rep( df.sig.subset$pos[i],3), -1*(df.sig.subset[ i, lsk.alt.freq.index]), 
+            col="blue4", pch=19, cex=0.75)
+    
+    segments( df.sig.subset$pos[i]-80, 
+              mean( as.numeric( df.sig.subset[i, lsc.alt.freq.index]) ),
+              df.sig.subset$pos[i]+80,
+              mean( as.numeric( df.sig.subset[i, lsc.alt.freq.index]) ) )
+    segments( df.sig.subset$pos[i]-80, 
+              mean( as.numeric( -1*(df.sig.subset[i, lsk.alt.freq.index])) ),
+              df.sig.subset$pos[i]+80,
+              mean( as.numeric( -1*(df.sig.subset[i, lsk.alt.freq.index])) ) )
+
+  }
+  
+  for (i in 1:nrow(gene.lsc)) {
+
+      segments( gene.lsc$pos[i], 
+                0,
+                gene.lsc$pos[i],
+                mean( as.numeric( gene.lsc[i, lsc.alt.freq.index.yuheng]) ),
+                col="red", lwd=2)
+      
+      points( rep( gene.lsc$pos[i],3), gene.lsc[ i, lsc.alt.freq.index.yuheng], 
+              col="red4", pch=19, cex=0.75)
+      segments( gene.lsc$pos[i]-80, # Make 20 for Myb and Hoxa9 and 50 for Ikzf2
+                mean( as.numeric( gene.lsc[i, lsc.alt.freq.index.yuheng]) ),
+                gene.lsc$pos[i]+80,
+                mean( as.numeric( gene.lsc[i, lsc.alt.freq.index.yuheng]) ) )
+
+  }
+  
+    for (i in 1:nrow(gene.lsk)) {
+
+      if ( nrow(gene.lsk) == 0) { } else { 
+        
+              segments( gene.lsk$pos[i], 
+                        0,
+                        gene.lsk$pos[i],
+                        -1*(mean( as.numeric( gene.lsk[i, lsk.alt.freq.index.yuheng]) )),
+                        col="blue", lwd=2)
+        
+              points( rep( gene.lsk$pos[i],3), -1*(gene.lsk[ i, lsk.alt.freq.index.yuheng]), 
+                col="blue4", pch=19, cex=0.75)
+              segments( gene.lsk$pos[i]-80, 
+                -1*( mean( as.numeric( gene.lsk[i, lsk.alt.freq.index.yuheng]) ) ),
+                gene.lsk$pos[i]+80,
+                -1*( mean( as.numeric( gene.lsk[i, lsk.alt.freq.index.yuheng]) ) ) )
+        
+        }
+    
+    }
+  
+  axis(2, at=seq(-1,1,0.1), labels=c(rev(seq(0,1,0.1)), seq(0.1,1,0.1)), cex.axis=2) # y axis
+  axis(1, at=c(seq(gene.coords$start, gene.coords$end,1000), gene.coords$end), 
+       labels=c(gene.coords$start, 
+                rep('', length(seq(gene.coords$start, gene.coords$end,1000))-1),
+                gene.coords$end), cex.axis=2, las=1) # x axis
+  dev.off()
+  
+}
+
+plot.edit.freq("Ikzf2", "ENSMUST00000027146.8", msi2.motif.in.ikzf2.df, -0.35, 0.7) # Need to change the width of the horizontal line
+```
+
+ADAR, DCD, MIG frequencies on separate tracks (as what reviewer wants)
+
+```{r diff freq LSC}
+# LSC
+df.significance <- read.csv("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/data/Mouse_snp_counts_significance_LSC_vs_LSK.csv")
+padj.thres <- 0.1
+df.significance$sig <- ifelse( df.significance$p.adj < padj.thres, "sig", "not_sig")
+
+plot.edit.freq.separate.tracks.lsc <- function(gene.name, ensembl.transcript.id, msi2.motif.in.gene.name) {
+  
+  gene.lsk <- subset(lsk, gene.symbol==gene.name)
+  gene.lsc <- subset(lsc, gene.symbol==gene.name)
+  
+  df.sig.subset <- subset(df.significance, gene.symbol==gene.name)
+  ref <- df.sig.subset [ ,grepl("ref.count", colnames(df.sig.subset)) ]
+  alt <- df.sig.subset [ ,grepl("alt.count", colnames(df.sig.subset)) ]
+  alt.freq <- alt / (alt + ref)
+  colnames(alt.freq) <- paste0(colnames(alt.freq), ".ALT.FREQ")
+  df.sig.subset <- cbind(df.sig.subset, alt.freq)
+  
+  sig.index <- which( df.sig.subset$sig=="sig" )
+  sig.pos <- df.sig.subset [ sig.index, ]$pos
+  sig.diff.freq <- df.sig.subset [ sig.index, ]$diff.frequency
+  
+  gene.coords <- subset(three.utr.df, group_name==ensembl.transcript.id)
+  
+  # Plot
+  setwd("/Users/karen/mount/chuk/View_LSC_and_LSK_edit_sites_in_3UTR/output/")
+  
+  pdf(paste0("ADAR_freq_MSI2-HyperTRIBE_", gene.name, "_LSC_greenMSI2motif.pdf"), 15, 12)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(10,10,5,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), ylim=c(0,1), 
+       xlab="", ylab="Edit freq\n",
+       cex.lab=2, cex.axis=2, las=2)
+  title(main=paste0("MSI2-ADAR binding at ", gene.name, " 3'UTR in LSC"), cex.main=2)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 5, col="black")
+  segments(gene.lsc$pos, 0, gene.lsc$pos, gene.lsc$ADA.frequency, col="red", lwd=5)
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="green", lwd=5)
+  
+  text(x=sig.pos, y=sig.diff.freq+0.2, "*", cex=3)
+  
+  dev.off()
+  
+  pdf(paste0("DCD_freq_MSI2-HyperTRIBE_", gene.name, "_LSC_greenMSI2motif.pdf"), 15, 12)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(10,10,5,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), ylim=c(0,1), 
+       xlab="", ylab="Edit freq\n",
+       cex.lab=2, cex.axis=2, las=2)
+  title(main=paste0("MSI2-DCD binding at ", gene.name, " 3'UTR in LSC"), cex.main=2)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 5, col="black")
+  segments(gene.lsc$pos, 0, gene.lsc$pos, gene.lsc$DCD.frequency, col="red", lwd=5)
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="green", lwd=5)
+  
+  text(x=sig.pos, y=sig.diff.freq+0.2, "*", cex=3)
+  
+  dev.off()
+  
+  pdf(paste0("MIG_freq_MSI2-HyperTRIBE_", gene.name, "_LSC_greenMSI2motif.pdf"), 15, 12)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(10,10,5,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), ylim=c(0,1), 
+       xlab="", ylab="Edit freq\n",
+       cex.lab=2, cex.axis=2, las=2)
+  title(main=paste0("MSI2-MIG binding at ", gene.name, " 3'UTR in LSC"), cex.main=2)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 5, col="black")
+  segments(gene.lsc$pos, 0, gene.lsc$pos, gene.lsc$MIG.frequency, col="red", lwd=5)
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="green", lwd=5)
+  
+  text(x=sig.pos, y=sig.diff.freq+0.2, "*", cex=3)
+  
+  dev.off()
+  
+}
+
+plot.edit.freq.separate.tracks.lsc("Hoxa9", "ENSMUST00000048680.7", msi2.motif.in.hoxa9.df)
+plot.edit.freq.separate.tracks.lsc("Myb", "ENSMUST00000188495.7", msi2.motif.in.myb.df)
+plot.edit.freq.separate.tracks.lsc("Ikzf2", "ENSMUST00000027146.8", msi2.motif.in.ikzf2.df)
+```
+
+LSK
+
+```{r diff freq}
+# LSK
+plot.edit.freq.separate.tracks.lsk <- function(gene.name, ensembl.transcript.id, msi2.motif.in.gene.name) {
+  
+  gene.lsk <- subset(lsk, gene.symbol==gene.name)
+  
+  gene.coords <- subset(three.utr.df, group_name==ensembl.transcript.id)
+  
+  # Plot
+  setwd("/Users/chuk/Documents/MSI2-hyperTRIBE/View_LSC_and_LSK_edit_sites_in_3UTR/output/")
+  
+  pdf(paste0("ADAR_freq_MSI2-HyperTRIBE_", gene.name, "_LSK_greenMSI2motif.pdf"), 15, 12)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(10,10,5,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), ylim=c(0,1), 
+       xlab="", ylab="Edit freq\n",
+       cex.lab=2, cex.axis=2, las=2)
+  title(main=paste0("MSI2-ADAR binding at ", gene.name, " 3'UTR in LSK"), cex.main=2)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 5, col="black")
+  segments(gene.lsk$pos, 0, gene.lsk$pos, gene.lsk$ADA.frequency, col="blue", lwd=5)
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="green", lwd=5)
+  dev.off()
+  
+  pdf(paste0("DCD_freq_MSI2-HyperTRIBE_", gene.name, "_LSK_greenMSI2motif.pdf"), 15, 12)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(10,10,5,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), ylim=c(0,1), 
+       xlab="", ylab="Edit freq\n",
+       cex.lab=2, cex.axis=2, las=2)
+  title(main=paste0("MSI2-DCD binding at ", gene.name, " 3'UTR in LSK"), cex.main=2)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 5, col="black")
+  segments(gene.lsk$pos, 0, gene.lsk$pos, gene.lsk$DCD.frequency, col="blue", lwd=5)
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="green", lwd=5)
+  dev.off()
+  
+  pdf(paste0("MIG_freq_MSI2-HyperTRIBE_", gene.name, "_LSK_greenMSI2motif.pdf"), 15, 12)
+  #png(paste0("MSI2-HyperTRIBE_", gene.name, "_LSC_LSK.png"), width=1480, height=1240, res=120)
+  par(mar=c(10,10,5,10), lend=2)
+  plot(NA, xlim=c(gene.coords$start-10, gene.coords$end+10), ylim=c(0,1), 
+       xlab="", ylab="Edit freq\n",
+       cex.lab=2, cex.axis=2, las=2)
+  title(main=paste0("MSI2-MIG binding at ", gene.name, " 3'UTR in LSK"), cex.main=2)
+  segments(gene.coords$start, 0, gene.coords$end, 0, lwd = 5, col="black")
+  segments(gene.lsk$pos, 0, gene.lsk$pos, gene.lsk$MIG.frequency, col="blue", lwd=5)
+  segments(gene.coords$start+msi2.motif.in.gene.name$start, 0, gene.coords$start+msi2.motif.in.gene.name$end, 0, col="green", lwd=5)
+  dev.off()
+  
+}
+
+plot.edit.freq.separate.tracks.lsk("Hoxa9", "ENSMUST00000048680.7", msi2.motif.in.hoxa9.df)
+plot.edit.freq.separate.tracks.lsk("Myb", "ENSMUST00000188495.7", msi2.motif.in.myb.df)
+plot.edit.freq.separate.tracks.lsk("Ikzf2", "ENSMUST00000027146.8", msi2.motif.in.ikzf2.df)
+```
+
+
+
+
+

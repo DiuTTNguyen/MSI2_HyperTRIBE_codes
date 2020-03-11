@@ -1,0 +1,206 @@
+---
+title: "Supp Fig 2 HSPC all shared genes heatmap"
+author: "Karen Chu"
+date: "1/7/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries
+
+```{r libraries}
+library(DESeq2)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(biomaRt)
+library(ggplot2)
+library(ComplexHeatmap)
+library(circlize)
+library(reshape2)
+library(openxlsx)
+library(dplyr)
+library(pheatmap)
+library(dichromat)
+library(RColorBrewer)
+library(ComplexHeatmap)
+```
+
+Work dir
+
+```{r work dir}
+work.dir <- "~/mount2/chuk/MSI2-HyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap_Apr112019/"
+output.dir <- "~/mount2/chuk/MSI2-HyperTRIBE/Fig2E_HSPC_MIG_ADAR_gene_expression_heatmap_Apr112019/SuppFig2_HSPC_all_shared_genes_heatmap_2020_0107"
+```
+
+Import data.
+
+```{r import}
+setwd(work.dir)
+
+edit.freq <- read.csv("output/diu_gene_list_subset_for_plotting_editing_frequency_heatmap.csv")
+ada.genex <- read.csv("output/res.z.transform.ADA_genelist_by_cluster.csv")
+mig.genex <- read.csv("output/res.z.transform.MIG_genelist_by_cluster.csv")
+```
+
+Match gene order just in case.
+Put cluster labels into edit.freq.
+Subset to get only high.in.LT.ST.MPP2.MPP4 genes
+
+```{r match}
+edit.freq.match <- edit.freq [match(rownames(ada.genex), rownames(edit.freq)), ]
+edit.freq.match$cluster <- ada.genex$cluster
+
+edit.freq.match.all.shared <- subset( edit.freq.match, cluster=="high.in.LT.ST.MPP2.MPP4" )
+ada.genex.all.shared <- subset( ada.genex, cluster=="high.in.LT.ST.MPP2.MPP4" )
+mig.genex.all.shared <- subset( mig.genex, cluster=="high.in.LT.ST.MPP2.MPP4" )
+```
+
+Plot all heatmaps.
+
+```{r plot}
+# Remove non-numeric columns
+rownames(edit.freq.match.all.shared) <- edit.freq.match.all.shared$X
+edit.freq.match.all.shared.plot.input <- edit.freq.match.all.shared %>% select(-c("X", "cluster"))
+
+rownames(ada.genex.all.shared) <- ada.genex.all.shared$X
+ada.genex.all.shared.plot.input <- ada.genex.all.shared %>% select(-c("X", "cluster"))
+
+rownames(mig.genex.all.shared) <- mig.genex.all.shared$X
+mig.genex.all.shared.plot.input <- mig.genex.all.shared %>% select(-c("X", "cluster"))
+
+# Get gene.x.min and max
+genex <- cbind(ada.genex.all.shared.plot.input, mig.genex.all.shared.plot.input)
+gene.x.min <- min(genex)
+gene.x.middle <- median(min(genex):max(genex))
+gene.x.max <- max(genex)
+
+# Obtain row order from cluster.
+h1 <- Heatmap(edit.freq.match.all.shared.plot.input,
+        clustering_method_rows = "centroid",
+        col=colorRamp2(c(min(edit.freq.match.all.shared.plot.input),
+                         0.1,
+                         #0.4),
+                         max(edit.freq.match.all.shared.plot.input)),
+                       c("blue", "white", "red")),
+        #column_title = "Differential Editing Frequency",
+        name="Differential Editing Frequency",
+        show_row_names = FALSE,
+        cluster_rows = TRUE,
+        cluster_columns = FALSE) +
+  # Heatmap(heatmap.ann,
+  #         col=c("red", "blue", "green", "gray"),
+  #         name="Cell Type",
+  #         show_row_names = FALSE) +
+  Heatmap(mig.genex.all.shared.plot.input,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          column_title = "Gene Expression in MIG",
+          name="MIG: VST read counts",
+          show_row_names = FALSE,
+          cluster_rows = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(ada.genex.all.shared.plot.input,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          column_title = "Gene Expression in MSI2-ADA",
+          name="MSI2-ADA: VST read counts",
+          show_row_names = FALSE,
+          cluster_rows = FALSE,
+          cluster_columns = FALSE)
+
+row.order <- row_order(h1)
+edit.freq.match.all.shared.plot.input.cluster.order <- edit.freq.match.all.shared.plot.input[rev(row.order[[1]]),]
+
+# Get middle section: Slc35e1 (146) to Etnk1 (254)
+top <- edit.freq.match.all.shared.plot.input.cluster.order[1:145,]
+middle <- edit.freq.match.all.shared.plot.input.cluster.order[255:nrow(edit.freq.match.all.shared.plot.input.cluster.order),]
+bottom <- edit.freq.match.all.shared.plot.input.cluster.order[146:254,]
+
+edit.freq.match.all.shared.plot.input.cluster.order.final <- rbind(top,middle,bottom)
+
+# Match row order
+mig.genex.all.shared.plot.input.cluster.order <- mig.genex.all.shared.plot.input [ match(rownames(edit.freq.match.all.shared.plot.input.cluster.order.final), rownames(mig.genex.all.shared.plot.input)),]
+
+ada.genex.all.shared.plot.input.cluster.order <- ada.genex.all.shared.plot.input [ match(rownames(edit.freq.match.all.shared.plot.input.cluster.order.final), rownames(ada.genex.all.shared.plot.input)),]
+
+setwd(output.dir)
+write.csv(edit.freq.match.all.shared.plot.input.cluster.order.final, 
+          "edit.freq.match.all.shared.plot.input.cluster.order.final.csv")
+write.csv(mig.genex.all.shared.plot.input.cluster.order, "mig.genex.all.shared.plot.input.cluster.order.csv")
+write.csv(ada.genex.all.shared.plot.input.cluster.order, "ada.genex.all.shared.plot.input.cluster.order.csv")
+
+```
+
+```{r plot final}
+setwd(output.dir)
+
+png("Supp_Fig2_HSPC_all_shared_genes_heatmap.png", 1000, 800)
+Heatmap(edit.freq.match.all.shared.plot.input.cluster.order.final,
+        clustering_method_rows = "centroid",
+        col=colorRamp2(c(0,
+                         0.1,
+                         0.5,
+                         max(edit.freq.match.all.shared.plot.input)),
+                       c("blue", "white", "red", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_rows = FALSE,
+        cluster_columns = FALSE) +
+  # Heatmap(heatmap.ann,
+  #         col=c("red", "blue", "green", "gray"),
+  #         name="Cell Type",
+  #         show_row_names = FALSE) +
+  Heatmap(mig.genex.all.shared.plot.input.cluster.order,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          column_title = "Gene Expression in MIG",
+          name="MIG: VST read counts",
+          show_row_names = FALSE,
+          cluster_rows = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(ada.genex.all.shared.plot.input.cluster.order,
+          col=colorRamp2(c(gene.x.min, gene.x.middle, gene.x.max),
+                         c("blue", "white", "red")),
+          column_title = "Gene Expression in MSI2-ADA",
+          name="MSI2-ADA: VST read counts",
+          show_row_names = FALSE,
+          cluster_rows = FALSE,
+          cluster_columns = FALSE)
+
+# Add borders
+decorate_heatmap_body(c("Editing Frequency"), {
+  
+  grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+  
+})
+
+decorate_heatmap_body(c("MIG: VST read counts"), {
+  
+  grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+  
+})
+
+decorate_heatmap_body(c("MSI2-ADA: VST read counts"), {
+  
+  grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+  
+})
+
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,334 @@
+---
+title: "LSC_LSK_combined_diff.freq > 0.6 heatmap"
+output: html_document
+---
+
+Libraries.
+
+```{r libraries}
+library(dplyr)
+library(pheatmap)
+library(dichromat)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(org.Mm.eg.db)
+library(circlize)
+```
+
+Set working directory.
+
+```{r setwd}
+folder <- "/Users/karen/mount/chuk/Fig3B_betabinomial_on_LSC_and_LSK_unique_targets/"
+```
+
+Import data.
+
+```{r data}
+setwd(folder)
+
+df <- read.csv("Mouse_LSC_LSK_ADA_DCD_MIG_snps_count_dedupped_KNOWN_SNPs_removed_LSC_LSK_combined_diff.freq_greaterthanequal_0.6_significance_fpkm.csv")
+
+df.filter <- df [ df$p.adj < 0.05 & 
+                    df$LSC.ADAR.fpkm >= 5 & 
+                    df$LSK.ADAR.fpkm >= 5 &
+                    df$LSC.DCD.fpkm >= 5 &
+                    df$LSK.DCD.fpkm >= 5 &
+                    df$LSC.MIG.fpkm >= 5 &
+                    df$LSK.MIG.fpkm >= 5, ]
+```
+
+Calculate diff.frequency based on controls.
+
+```{r calculate diff.freq}
+# Separate data by LSC and LSK
+snp.lsc.adar.mig.dcd <- df.filter [ ,grepl("ADA.*DsRed|DCD.*DsRed|MIG.*DsRed|Ds.Red", colnames(df.filter))]
+snp.lsk.adar.mig.dcd <- df.filter [ ,grepl("A_IGO|B_IGO|C_IGO", colnames(df.filter))]
+
+# Calculate diff.frequency based on controls
+calculate.alt.freq <- function(df) {
+  
+  ref.counts <- df [ ,grepl("ref.count", colnames(df)) ]
+  alt.counts <- df [ ,grepl("alt.count", colnames(df)) ]
+  alt.freq <- alt.counts / (ref.counts + alt.counts)
+  
+  adar.index <- which( grepl("ADA", colnames(alt.freq)) )
+  controls.index <- which( grepl("DCD|MIG", colnames(alt.freq)) )
+  
+  diff.frequency = rowMeans(alt.freq[, adar.index ], na.rm=T) - rowMeans(alt.freq[, controls.index ],na.rm=T)
+  
+  return(diff.frequency)
+  
+}
+
+snp.lsc.adar.mig.dcd$diff.frequency <- calculate.alt.freq(snp.lsc.adar.mig.dcd)
+snp.lsk.adar.mig.dcd$diff.frequency <- calculate.alt.freq(snp.lsk.adar.mig.dcd)
+
+snp.lsc.adar.mig.dcd$entrez.id <- df.filter$entrez.id
+snp.lsk.adar.mig.dcd$entrez.id <- df.filter$entrez.id
+
+snp.lsc.adar.mig.dcd$gene.symbol <- df.filter$gene.symbol
+snp.lsk.adar.mig.dcd$gene.symbol <- df.filter$gene.symbol
+```
+
+Obtain the maximum diff.frequency for each gene.
+
+```{r max diff.freq}
+setwd(folder)
+
+# Get alt and ref counts
+adar.ref.counts <- df.filter [ , grepl("ADA.*ref.count", colnames(df.filter))]
+adar.alt.counts <- df.filter [ , grepl("ADA.*alt.count", colnames(df.filter))]
+
+mig.ref.counts <- df.filter [ , grepl("MIG.*ref.count", colnames(df.filter))]
+mig.alt.counts <- df.filter [ , grepl("MIG.*alt.count", colnames(df.filter))]
+
+dcd.ref.counts <- df.filter [ , grepl("DCD.*ref.count", colnames(df.filter))]
+dcd.alt.counts <- df.filter [ , grepl("DCD.*alt.count", colnames(df.filter))]
+
+# Calcuate edit frequency
+adar.alt.freq <- adar.alt.counts / ( adar.alt.counts + adar.ref.counts )
+mig.alt.freq <- mig.alt.counts / ( mig.alt.counts + mig.ref.counts )
+dcd.alt.freq <- dcd.alt.counts / ( dcd.alt.counts + dcd.ref.counts )
+
+control.alt.freq <- cbind(mig.alt.freq, dcd.alt.freq)
+
+# Calculate diff.frequency for each sample
+lsc.control.index <- which( grepl("DsRed|Ds.Red", colnames(control.alt.freq)) )
+lsk.control.index <- which( grepl(".A_IGO|.B_IGO|.C_IGO", colnames(control.alt.freq)))
+
+LSK.a.diff.freq <- data.frame( diff.frequency = adar.alt.freq$Sample_ADA.A_IGO_08334_B_2.dedupped.bam.alt.count -
+                                rowMeans( control.alt.freq[,lsk.control.index ],na.rm=T),
+                               entrez.id = df.filter$entrez.id )
+LSK.b.diff.freq <- data.frame( diff.frequency = adar.alt.freq$Sample_ADA.B_IGO_08334_B_5.dedupped.bam.alt.count -
+                                 rowMeans( control.alt.freq[,lsk.control.index ],na.rm=T),
+                               entrez.id = df.filter$entrez.id )
+LSK.c.diff.freq <- data.frame( diff.frequency = adar.alt.freq$Sample_ADA.C_IGO_08334_B_8.dedupped.bam.alt.count -
+                                 rowMeans( control.alt.freq[,lsk.control.index ],na.rm=T),
+                               entrez.id = df.filter$entrez.id )
+                        
+LSC.a.diff.freq <- data.frame( diff.frequency = adar.alt.freq$Sample_ADA.A.DsRed_IGO_08334_D_2.dedupped.bam.alt.count -
+                                 rowMeans( control.alt.freq[,lsc.control.index ],na.rm=T),
+                               entrez.id = df.filter$entrez.id )
+LSC.b.diff.freq <- data.frame( diff.frequency = adar.alt.freq$Sample_ADA.B.DsRed_IGO_08334_D_5.dedupped.bam.alt.count -
+                                 rowMeans( control.alt.freq[,lsc.control.index ],na.rm=T),
+                               entrez.id = df.filter$entrez.id )
+LSC.c.diff.freq <- data.frame( diff.frequency = adar.alt.freq$Sample_ADA.C.DsRed_IGO_08334_D_8.dedupped.bam.alt.count -
+                                 rowMeans( control.alt.freq[,lsc.control.index ],na.rm=T),
+                               entrez.id = df.filter$entrez.id )
+
+max.diff.freq <- function(df) {
+  
+  # Convert NaN to zero or else it will be excluded from the final heatmap. Change to zero is for aesthetic reasons in heatmap.
+  df [ is.na(df) ] <- 0
+  
+  # Obtain maximum diff.frequency value of all entrez id
+  max.diff.freq <- df %>% dplyr::group_by(entrez.id) %>% filter(diff.frequency == max(diff.frequency))
+  max.diff.freq.df <- as.data.frame(max.diff.freq)
+  
+  # Remove duplicates that have equal diff.frequency values
+  max.diff.freq.df.final <- max.diff.freq.df [ !(duplicated(max.diff.freq.df$entrez.id)), ]
+  
+  return(max.diff.freq.df.final)
+  
+}
+
+LSK.a.max.diff.freq <- max.diff.freq(LSK.a.diff.freq)
+LSK.b.max.diff.freq <- max.diff.freq(LSK.b.diff.freq)
+LSK.c.max.diff.freq <- max.diff.freq(LSK.c.diff.freq)
+LSC.a.max.diff.freq <- max.diff.freq(LSC.a.diff.freq)
+LSC.b.max.diff.freq <- max.diff.freq(LSC.b.diff.freq)
+LSC.c.max.diff.freq <- max.diff.freq(LSC.c.diff.freq)
+
+
+df.stats <- data.frame( LSK.A.max.diff.freq = LSK.a.max.diff.freq$diff.frequency, 
+                        LSK.B.max.diff.freq = LSK.b.max.diff.freq$diff.frequency,
+                        LSK.C.max.diff.freq = LSK.c.max.diff.freq$diff.frequency,
+                        
+                        LSC.A.max.diff.freq = LSC.a.max.diff.freq$diff.frequency,
+                        LSC.B.max.diff.freq = LSC.b.max.diff.freq$diff.frequency,
+                        LSC.C.max.diff.freq = LSC.c.max.diff.freq$diff.frequency )
+
+df.stats$entrez.id <- LSK.a.max.diff.freq$entrez.id
+heatmap.input <- df.stats
+```
+
+
+Prepare number of edit sites per gene in LSC and LSK.
+Filter by diff.freq > 0.1 and call all those that pass the threshold as an edit site...
+
+```{r edit sites heatmap}
+# Calculate edit frequency for all edit sites
+# Call columns as "edit.sites" because we will convert them to edit sites later.
+edit.sites.combined <- data.frame( LSK.A.edit.sites = LSK.a.diff.freq$diff.frequency,
+                                       LSK.B.edit.sites = LSK.b.diff.freq$diff.frequency,
+                                       LSK.C.edit.sites = LSK.c.diff.freq$diff.frequency, 
+                                       
+                                       LSC.A.edit.sites = LSC.a.diff.freq$diff.frequency,
+                                       LSC.B.edit.sites = LSC.b.diff.freq$diff.frequency,
+                                       LSC.C.edit.sites = LSC.c.diff.freq$diff.frequency,
+                                  
+                                    entrez.id = LSK.a.diff.freq$entrez.id )
+
+
+# Replace values < 0.1 with NA and then add entrez.id column
+edit.sites.combined [ edit.sites.combined < 0.1 ] <- "NA"
+
+# Count the number of edit sites per entrez.id
+remove.na.and.count <- function(df, index.num) {
+  
+  df.subset <- data.frame( diff.freq = df[,index.num],
+                           entrez.id = df$entrez.id )
+  df.subset.remove.na <- df.subset [ df.subset$diff.freq != "NA", ]
+  df.table <- table(df.subset.remove.na$entrez.id)
+  
+  df.table.df <- as.data.frame(df.table)
+  colnames(df.table.df) <- c("entrez.id", colnames(df)[index.num])
+  
+  return(df.table.df)
+  
+}
+
+lsk.sample.a.edit.sites <- remove.na.and.count(edit.sites.combined, 1)
+lsk.sample.b.edit.sites <- remove.na.and.count(edit.sites.combined, 2)
+lsk.sample.c.edit.sites <- remove.na.and.count(edit.sites.combined, 3)
+
+lsc.sample.a.edit.sites <- remove.na.and.count(edit.sites.combined, 4)
+lsc.sample.b.edit.sites <- remove.na.and.count(edit.sites.combined, 5)
+lsc.sample.c.edit.sites <- remove.na.and.count(edit.sites.combined, 6)
+
+edit.sites.final <- merge(lsk.sample.a.edit.sites, lsk.sample.b.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsk.sample.c.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsc.sample.a.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsc.sample.b.edit.sites, by="entrez.id", all = TRUE)
+edit.sites.final <- merge(edit.sites.final, lsc.sample.c.edit.sites, by="entrez.id", all = TRUE)
+
+edit.sites.final [ is.na(edit.sites.final) ] <- 0
+```
+
+
+Import VST gene expression reads
+
+```{r vst}
+setwd(folder)
+# Import scaled VST read counts
+reads <- read.csv("reads.vst.csv")
+colnames(reads)[1] <- "entrez.id"
+reads.subset <- reads[ reads$entrez.id %in% heatmap.input$entrez.id, ]
+rownames(reads.subset) <- reads.subset$entrez.id
+
+gene.x.colnames <- strsplit(colnames(reads.subset), "_08334")
+gene.x.colnames.final <- sapply(gene.x.colnames, "[[", 1)
+colnames(reads.subset) <- gene.x.colnames.final
+
+# Subset VST counts to only include ADAR and MIG
+lsc.adar.index <- which( grepl("ADA.*DsRed|ADA.*Ds.Red", colnames(reads.subset)))
+lsk.adar.index <- which( grepl("ADA.A_IGO|ADA.B_IGO|ADA.C_IGO", colnames(reads.subset)))
+
+lsc.mig.index <- which( grepl("MIG.*DsRed", colnames(reads.subset)))
+lsk.mig.index <- which( grepl("MIG.A_IGO|MIG.B_IGO|MIG.C_IGO", colnames(reads.subset)))
+
+lsc.dcd.index <- which( grepl("DCD.*DsRed", colnames(reads.subset)))
+lsk.dcd.index <- which( grepl("DCD.A_IGO|DCD.B_IGO|DCD.C_IGO", colnames(reads.subset)))
+
+reads.subset.mig <- reads.subset[, c(lsk.mig.index, lsc.mig.index)]
+reads.subset.adar <- reads.subset[, c(lsk.adar.index, lsc.adar.index)]
+
+reads.subset.mig.adar <- data.frame( LSK.MIG=apply(reads.subset[,lsk.mig.index], 1, mean),
+                                     LSC.MIG=apply(reads.subset[,lsc.mig.index], 1, mean),
+                                     LSK.ADA=apply(reads.subset[,lsk.adar.index], 1, mean),
+                                     LSC.ADA=apply(reads.subset[,lsc.mig.index], 1, mean) )
+
+# z-transform
+# scale is generic function whose default method centers and/or scales the columns of a numeric matrix.
+# 11/15/2019: I checked and this is the correct command for z-transformation
+reads.subset.mig.adar.z.transform <- t( scale(t(reads.subset.mig.adar)) )
+reads.subset.mig.adar.z.transform <- as.data.frame(reads.subset.mig.adar.z.transform)
+reads.subset.mig.adar.z.transform$entrez.id <- rownames(reads.subset.mig.adar)
+```
+
+Merge data into one dataframe, set rownames, and then split. Required to get ComplexHeatmap to plot matching rows. It won't match the rows properly if you plot 2 heatmaps but assigned the rownames separately.
+
+```{r merge and split}
+setwd(folder)
+
+# Need to merge them into one dataframe so ComplexHeatmap can order the rows appropriately
+#heatmap.combined.final <- merge(heatmap.input, reads.subset.mig.adar.z.transform, by="entrez.id", all = TRUE)
+#heatmap.combined.mig <- merge(heatmap.input, reads.subset.mig.z.transform, by="entrez.id", all=TRUE)
+heatmap.combined.mig.ada <- merge(heatmap.input, reads.subset.mig.adar.z.transform, by="entrez.id", all=TRUE)
+heatmap.combined.final <- merge(heatmap.combined.mig.ada, edit.sites.final, by="entrez.id", all=TRUE)
+rownames(heatmap.combined.final) <- heatmap.combined.final$entrez.id
+
+write.csv(heatmap.combined.final, "heatmap_combined.final.csv")
+
+# Get diff.freq for heatmap
+heatmap.diff.freq.input <- heatmap.combined.final [ ,grepl("max.diff.freq", colnames(heatmap.combined.final))]
+
+# Get edit sites
+heatmap.edit.sites <- heatmap.combined.final [ ,grepl("edit.sites", colnames(heatmap.combined.final))]
+heatmap.edit.sites [ is.na(heatmap.edit.sites) ] <- 0
+  
+# Get gene expression for heatmap
+heatmap.gene.expression <- heatmap.combined.final [ ,grepl("MIG|ADA", colnames(heatmap.combined.final))]
+```
+
+Plot heatmap.
+
+```{r plot heatmap}
+setwd(folder)
+
+library(ComplexHeatmap)
+
+png("LSC_LSK_diff.freq_greaterthanorequalto_0.6_heatmap.png", 1000, 800)
+Heatmap(heatmap.diff.freq.input,
+        #clustering_distance_rows = "minkowski",
+        clustering_method_rows = "mcquitty",
+        col=colorRamp2(c(min(heatmap.diff.freq.input), 0.1, max(heatmap.diff.freq.input)), c("blue", "white", "red")),
+        column_title = "Editing Frequency",
+        name="Editing Frequency",
+        show_row_names = FALSE,
+        cluster_columns = FALSE) +
+  Heatmap(log2(heatmap.edit.sites+1),
+          column_title = "Edit Sites",
+          name="log2( Edit Sites +1)",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) +
+  Heatmap(heatmap.gene.expression,
+          column_title = "Gene Expression",
+          name="Z-transformed VST read counts",
+          show_row_names = FALSE,
+          cluster_columns = FALSE) 
+
+# Add borders
+decorate_heatmap_body("Editing Frequency", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("log2( Edit Sites +1)", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+decorate_heatmap_body("Z-transformed VST read counts", {
+
+    grid.rect(gp = gpar(fill = "transparent", col = "black", lwd = 2))
+
+})
+
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

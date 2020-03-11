@@ -1,0 +1,184 @@
+---
+title: "Generate gene list for heatmap"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(openxlsx)
+library(dplyr)
+```
+
+Import data of significant edit sites.
+
+```{r data}
+setwd("/Users/karen/mount/chuk/LT_vs_MPPs/generate_list_of_genes_for_heatmap/")
+#setwd("~/sshfs_mount/chuk/LT_vs_MPPs/generate_list_of_genes_for_heatmap/")
+lt <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=1)
+st <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=2)
+mpp2 <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=3)
+mpp4 <- read.xlsx("mouse_hsc_snp_counts_dedupped_significant.xlsx", sheet=4)
+```
+
+Combine all cell types into one dataframe called "all.cell.types.no.filter"
+
+```{r aggregate all cell types}
+# Create cell.type column
+lt$cell.type <- "LT"
+st$cell.type <- "ST"
+mpp2$cell.type <- "MPP2"
+mpp4$cell.type <- "MPP4"
+
+# Subset dataframe for necessary columns
+lt.subset <- lt %>% dplyr::select(c("chr", "pos", "strand", "gene.symbol", "entrez.id", "diff.frequency", "cell.type") )
+st.subset <- st %>% dplyr::select(c("chr", "pos", "strand", "gene.symbol", "entrez.id", "diff.frequency", "cell.type") )
+mpp2.subset <- mpp2 %>% dplyr::select(c("chr", "pos", "strand", "gene.symbol", "entrez.id", "diff.frequency", "cell.type") )
+mpp4.subset <- mpp4 %>% dplyr::select(c("chr", "pos", "strand", "gene.symbol", "entrez.id", "diff.frequency", "cell.type") )
+
+# Merge all cell type data together.
+all.cell.types.no.filter <- rbind( lt.subset, st.subset, mpp2.subset, mpp4.subset )
+```
+
+Filter by fpkm >=1 and diff.freq >=0.1.
+
+```{r filter}
+filter.function <- function(df) {
+
+  df.filter <- df [ df$ADA.fpkm >=5 &
+                    df$DCD.fpkm >=5 &
+                    df$MIG.fpkm >=5 &
+                    df$diff.frequency >=0.1, ]
+
+  return(df.filter)
+
+}
+
+# filter.function <- function(df) {
+# 
+#   df.filter <- df [ df$ADA.fpkm >=1 &
+#                     df$DCD.fpkm >=1 &
+#                     df$MIG.fpkm >=1 &
+#                     df$diff.frequency >=0.1, ]
+# 
+#   return(df.filter)
+# 
+# }
+
+lt.filter <- filter.function(lt)
+st.filter <- filter.function(st)
+mpp2.filter <- filter.function(mpp2)
+mpp4.filter <- filter.function(mpp4)
+```
+
+Obtain gene names after filter.
+
+all.cell.types.no.filter.diff.freq is the dataframe with all cell types that contain genes that pass the fpkm and diff.freq filters.
+
+
+```{r obtain gene names}
+# Obtain genes that pass filters
+genes.after.filter <- unique( c( unique(lt.filter$entrez.id), 
+                                 unique(st.filter$entrez.id),
+                                 unique(mpp2.filter$entrez.id),
+                                 unique(mpp4.filter$entrez.id) ) )
+
+# Filter whole list to only include genes that passed the fpkm and diff.freq filters.
+all.cell.types.no.filter.subset <- all.cell.types.no.filter [ all.cell.types.no.filter$entrez.id %in% genes.after.filter, ]
+all.cell.types.no.filter.diff.freq <- all.cell.types.no.filter.subset %>% dplyr::select(c("gene.symbol", "entrez.id", "diff.frequency", "cell.type"))
+```
+
+
+Obtain the maximum diff.frequency for each gene in each cell type.
+
+
+```{r obtain max diff.freq}
+# Obtain maximum diff.frequency for each gene in each cell type
+obtain.max.diff.freq <- function(df, cell.name) {
+  
+  df.subset <- subset(df, cell.type==cell.name)
+  df.max.diff.freq <- tapply(df.subset$diff.frequency, df.subset$gene.symbol, max)
+  df.max.diff.freq.final <- data.frame( gene.symbol = names(df.max.diff.freq),
+                                        diff.frequency = df.max.diff.freq )
+  
+  return(df.max.diff.freq.final)
+  
+}
+
+lt.max.diff.freq <- obtain.max.diff.freq(all.cell.types.no.filter.diff.freq, "LT")
+st.max.diff.freq <- obtain.max.diff.freq(all.cell.types.no.filter.diff.freq, "ST")
+mpp2.max.diff.freq <- obtain.max.diff.freq(all.cell.types.no.filter.diff.freq, "MPP2")
+mpp4.max.diff.freq <- obtain.max.diff.freq(all.cell.types.no.filter.diff.freq, "MPP4")
+
+# Merge all cell types with max diff.freq by gene symbol
+lt.st <- merge(lt.max.diff.freq, st.max.diff.freq, by="gene.symbol", all=TRUE)
+colnames(lt.st) <- c("gene.symbol", "LT.diff.freq", "ST.diff.freq")
+lt.st.mpp2 <- merge(lt.st, mpp2.max.diff.freq, by="gene.symbol", all=TRUE)
+colnames(lt.st.mpp2) <- c("gene.symbol", "LT.diff.freq", "ST.diff.freq", "MPP2.diff.freq")
+lt.st.mpp2.mpp4 <- merge(lt.st.mpp2, mpp4.max.diff.freq, by="gene.symbol", all=TRUE)
+colnames(lt.st.mpp2.mpp4) <- c("gene.symbol", "LT.diff.freq", "ST.diff.freq", 
+                               "MPP2.diff.freq", "MPP4.diff.freq")
+
+# Convert NA to 0 
+# lt.st.mpp2.mpp4 [ is.na(lt.st.mpp2.mpp4) ] <- 0
+```
+
+Export gene list with max diff.freq values.
+
+```{r write csv}
+setwd("/Users/karen/mount/chuk/LT_vs_MPPs/generate_list_of_genes_for_heatmap/")
+write.csv(lt.st.mpp2.mpp4, "HSPC_fpkm_greaterthanorequalto_5_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values.csv", row.names = FALSE)
+```
+
+
+Identify cell type specific genes by clustering
+cell type specific have max diff.freq >=0.1 and all other cell types have max.diff.freq == NA.
+
+```{r genes specific to each cell type}
+setwd("/Users/karen/mount/chuk/LT_vs_MPPs/generate_list_of_genes_for_heatmap/")
+
+max.diff.freq <- lt.st.mpp2.mpp4
+
+lt.unique <- max.diff.freq [ max.diff.freq$LT.diff.freq >= 0.1 &
+                             is.na(max.diff.freq$ST.diff.freq) &
+                             is.na(max.diff.freq$MPP2.diff.freq) &
+                             is.na(max.diff.freq$MPP4.diff.freq), ]
+
+st.unique <- max.diff.freq [ max.diff.freq$ST.diff.freq >= 0.1 &
+                             is.na(max.diff.freq$LT.diff.freq) &
+                             is.na(max.diff.freq$MPP2.diff.freq) &
+                             is.na(max.diff.freq$MPP4.diff.freq), ]
+
+mpp2.unique <- max.diff.freq [ max.diff.freq$MPP2.diff.freq >= 0.1 &
+                             is.na(max.diff.freq$LT.diff.freq) &
+                             is.na(max.diff.freq$ST.diff.freq) &
+                             is.na(max.diff.freq$MPP4.diff.freq), ]
+
+mpp4.unique <- max.diff.freq [ max.diff.freq$MPP4.diff.freq >= 0.1 &
+                             is.na(max.diff.freq$LT.diff.freq) &
+                             is.na(max.diff.freq$ST.diff.freq) &
+                             is.na(max.diff.freq$MPP2.diff.freq), ]
+
+write.csv(lt.unique, "HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_LT-UNIQUE.csv", row.names = FALSE)
+
+write.csv(st.unique, "HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_ST-UNIQUE.csv", row.names = FALSE)
+
+write.csv(mpp2.unique, "HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_MPP2-UNIQUE.csv", row.names = FALSE)
+
+write.csv(mpp4.unique, "HSPC_fpkm_greaterthan_1_diff.freq_greaterthanorequalto_0.1_genelist_with_maximum_diff.freq_values_MPP4-UNIQUE.csv", row.names = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+

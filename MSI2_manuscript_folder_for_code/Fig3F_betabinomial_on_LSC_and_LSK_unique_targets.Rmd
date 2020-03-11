@@ -1,0 +1,112 @@
+---
+title: "betabinomial on LSC and LSK unique targets"
+author: "Karen Chu"
+date: "10/24/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(openxlsx)
+```
+
+Set working directory.
+
+```{r setwd}
+#folder <- "~/sshfs_mount/chuk/Fig3B_betabinomial_on_LSC_and_LSK_unique_targets/"
+folder <- "~/mount/chuk/Fig3B_betabinomial_on_LSC_and_LSK_unique_targets/"
+```
+
+Import data.
+Filter by diff.freq and fpkm.
+Number of unique entrez.id in lsc.filter and lsk.filter match the number in the manuscript.
+Use entrez.id, not gene.symbol because one of the entrez.id has two different gene names.
+
+```{r import}
+setwd("/Users/karen/mount/chuk/HOMER_HOXA9_MYC_MYB_IKZF2/input/")
+
+lsc <- read.csv("lsc_with_distance.csv")
+lsk <- read.csv("lsk_with_distance.csv")
+
+# lsc.filter <- lsc [ lsc$diff.frequency >= 0.1 & lsc$ADA.fpkm > 5 & lsc$DCD.fpkm > 5 & lsc$MIG.fpkm > 5, ]
+# lsk.filter <- lsk [ lsk$diff.frequency >= 0.1 & lsk$ADA.fpkm > 5 & lsk$DCD.fpkm > 5 & lsk$MIG.fpkm > 5, ]
+
+lsc.filter <- lsc [ lsc$diff.frequency >= 0.6 & lsc$ADA.fpkm >= 5 & lsc$DCD.fpkm >= 5 & lsc$MIG.fpkm >= 5, ]
+lsk.filter <- lsk [ lsk$diff.frequency >= 0.6 & lsk$ADA.fpkm >= 5 & lsk$DCD.fpkm >= 5 & lsk$MIG.fpkm >= 5, ]
+
+length(unique(lsc.filter$entrez.id))
+length(unique(lsk.filter$entrez.id))
+```
+
+Obtain LSC and LSK unique genes.
+
+```{r unique}
+lsc.unique <- setdiff(unique(lsc.filter$entrez.id),
+                      unique(lsk.filter$entrez.id) )
+
+lsk.unique <- setdiff(unique(lsk.filter$entrez.id),
+                      unique(lsc.filter$entrez.id) )
+
+lsc.lsk.shared <- intersect(unique(lsc.filter$entrez.id),
+                      unique(lsk.filter$entrez.id) )
+
+# intersect(lsc.unique, lsk.unique) # To check there are no overlaps in the gene lists.
+
+length(unique(lsc.unique))
+length(unique(lsk.unique))
+```
+
+Prepare betabinomial input.
+10/24/19: Need to re-do the snp count with Yuheng's dedupped bam files. - Done on 10/25/19.
+10/25/19: Even though used Yuheng's dedupped bam files, Ms4a3 (entrez.id=170813) is still missing in LSC snp counts and Bcl7c (entrez.id=12055) is still missing in LSK snp counts.
+These genes are not known to be important in leukemia or hematopoiesis, so go ahead with the analysis for all the other LSC-unique and LSK-unique genes.
+
+```{r betabinom input}
+snp.counts <- read.xlsx("/Users/karen/warm_mount/chuk/Fig3B_betabinomial_on_LSC_and_LSK_unique_targets/Yuheng_files/Mouse_LSC_LSK_ADA_DCD_MIG_snps_count_dedupped_KNOWN_SNPs_removed.xlsx")
+
+lsc.unique.betabinom.input <- snp.counts [ snp.counts$entrez.id %in% lsc.unique, ]
+lsk.unique.betabinom.input <- snp.counts [ snp.counts$entrez.id %in% lsk.unique, ]
+lsc.lsk.shared.betabinom.input <- snp.counts [ snp.counts$entrez.id %in% lsc.lsk.shared, ]
+
+# Check all entrez id appear in snp counts
+setdiff(lsc.unique, lsc.unique.betabinom.input$entrez.id)
+setdiff(lsk.unique, lsk.unique.betabinom.input$entrez.id)
+
+# Create input combining LSC and LSK
+lsc.lsk.combined <- c(unique(lsc.filter$entrez.id), unique(lsk.filter$entrez.id))
+lsc.lsk.combined.betabinom.input <- snp.counts [ snp.counts$entrez.id %in% lsc.lsk.combined, ]
+```
+
+Save betabinomial inputs.
+
+```{r save}
+setwd(folder)
+
+# write.csv(lsc.unique.betabinom.input, "lsc.unique.betabinom.input.csv", row.names = FALSE)
+# write.csv(lsk.unique.betabinom.input, "lsk.unique.betabinom.input.csv", row.names = FALSE)
+write.csv(lsc.lsk.combined.betabinom.input, "lsc.lsk.combined.betabinom.input_diff.freq_greaterthanequal_0.6.csv", row.names = FALSE)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,182 @@
+---
+title: "Gene expression analysis"
+author: "Karen Chu"
+date: "7/31/2019"
+output: html_document
+---
+
+Gene expression analysis.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries.
+
+```{r libraries}
+library(DESeq2)
+library(data.table)
+library(TxDb.Mmusculus.UCSC.mm10.knownGene)
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(org.Mm.eg.db)
+library(org.Hs.eg.db)
+library(biomaRt)
+library(ggplot2)
+library("ggrepel")
+library(data.table)
+library(dplyr)
+```
+
+Working directory.
+
+```{r folder}
+#folder <- "/Users/chuk/mount/chuk/LT_vs_MPPs/data/"
+folder <-"/Users/karen/mount/chuk/Supp_Fig3_LSC_LSK_DESeq2_volcano_plots/"
+```
+
+Import data. Need to be RDS object in order for downstream stuff to work.
+
+```{r data lsc}
+setwd(folder)
+
+reads <- readRDS("/Users/karen/mount/chuk/data_resources/LSC_rnaseq_read_count_entrez_id.rds")
+
+data.name <- "LSC_MIG_vs_DCD"
+name.type <- "MIG|DCD"
+reads.subset <- reads [ ,grepl(name.type, colnames(reads))]
+reads.subset <- as.data.frame( assay(reads.subset) )
+```
+
+Filter by fpkm >=1 
+
+```{r fpkm}
+fpkm.mat <- fpkm( DESeqDataSet( reads, ~1 ) )
+fpkm.greater.equal.to.one <- which( rowMeans(fpkm.mat) >= 1 )
+reads.filtered <- reads.subset [ rownames(reads.subset) %in% names(fpkm.greater.equal.to.one), ]
+```
+
+Prepare data for DESeq2. 
+
+```{r prep DESeq2}
+condition <- ifelse(grepl("DCD", colnames(reads.filtered)), "DCD", "MIG")
+coldata <- data.frame(Sample = as.factor(colnames(reads.filtered)), 
+                      condition = as.factor(condition) )
+
+dds <- DESeqDataSetFromMatrix(
+  countData = as.matrix(reads.filtered), 
+  colData = coldata, 
+  design = ~condition) 
+
+dds$cell <- relevel(dds$condition, "DCD") # intercept that DESeq2 calculates depends on the first factor. If "LSK" first, then results in log2foldchange(LSC/LSK). If "LSC" first, then results is log2foldchange(LSK/LSC).
+```
+
+Run DESeq2
+
+```{r DESeq2}
+dds <- DESeq(dds)
+dds.vst <- varianceStabilizingTransformation(dds)
+res <- results(dds)
+```
+
+Choose below: org.Mm.eg.db for mouse annotation, or org.Hs.eg.db for human.
+
+```{r gene symbol}
+library(annotate)
+entrezid.to.genesymbol <- function(res) {
+  
+  res$entrez.id <- rownames(res)
+  
+  read.count.entrez.id <- as.character(rownames(res))
+  read.count.gene.symbol <- lookUp(read.count.entrez.id, 'org.Mm.eg.db', 'SYMBOL')
+  #read.count.gene.symbol <- lookUp(read.count.entrez.id, 'org.Hs.eg.db', 'SYMBOL')
+  read.count.gene.symbol <- unlist(read.count.gene.symbol)
+  res$gene <- read.count.gene.symbol
+  
+  return(res)
+  
+}
+
+reads.filtered.with.genesymbols <- entrezid.to.genesymbol(res)
+reads.filtered.with.genesymbols <- reads.filtered.with.genesymbols [ !is.na(reads.filtered.with.genesymbols$padj), ]
+write.csv(as.data.frame(reads.filtered.with.genesymbols), paste0(folder, data.name, "_", "_DESeq2Results.csv"))
+```
+
+Filter out genes with padj = NA.
+After running code, found out none of the p-adj are NA, so "res" and "lsc.lsk.dds.with.genesymbols" are the same dataframes but "lsc.lsk.dds.with.genesymbols" has gene symbols while "res" doesn't.
+
+```{r padj NA filter}
+cat("# of genes before padj filter: ", nrow(res))
+res <- res[!is.na(res$padj), ]
+cat("# of genes after padj filter: ", nrow(res))
+```
+
+PCA.
+
+```{r PCA}
+pdf( paste0(folder, data.name, "_PCA-KC.pdf"), 8, 6, useDingbats = F )
+pcaData <- plotPCA(dds.vst, intgroup=c("condition"), returnData=TRUE)
+percentVar <- round(100 * attr(pcaData, "percentVar"))
+#ggplot(pcaData, aes(PC1, PC2, color=Sample, shape=cell)) +
+ggplot(pcaData, aes(PC1, PC2, color=condition)) +
+  geom_point(size=3) +
+  xlab(paste0("PC1: ",percentVar[1],"% variance")) +
+  ylab(paste0("PC2: ",percentVar[2],"% variance")) + 
+  coord_fixed() +
+  ggtitle(name.type)
+dev.off()
+```
+
+MA plot.
+
+```{r MA plot}
+pdf( paste0(folder, data.name, "_MA-KC.pdf"), 8, 6, useDingbats = F )
+plotMA(res, ylim=c(-5,5))
+dev.off()
+```
+
+Volcano plot. 
+
+```{r volcano}
+padj.thres <- 0.05
+
+res <- reads.filtered.with.genesymbols 
+
+volcano.input <- as.data.frame( res[ order( res$padj, decreasing = F ), ] )
+volcano.input <- mutate(volcano.input, sig=ifelse(volcano.input$padj < padj.thres, "Sig", "Not Sig"))
+
+pdf( paste0(folder, data.name, "_volcano-KC.pdf"), 14, 10, useDingbats = F )
+ggplot(data=volcano.input, aes(x=log2FoldChange, y=-log10(pvalue), colour= sig)) + 
+  geom_point(alpha=1, size=4) +
+  theme_minimal() +
+  theme(legend.position="none") +
+  #geom_text_repel(data=volcano.input[1:30,], aes(label=gene), size = 5,box.padding = unit(0.5, "lines"), point.padding = unit(0.5, "lines"), color="black") +
+  xlab("\nlog2(MIG / DCD)") + ylab("-log10(p)\n") +
+  ggtitle(paste0(data.name, "; padj <", padj.thres, ";\n# of sig genes: ", nrow( subset(volcano.input, sig=="Sig") ), "\n")) +
+  scale_color_manual( values = c( "Sig"='red3', "Not Sig" ='black' ) ) + 
+  #scale_x_continuous(breaks = c( round(min(volcano.input$log2FoldChange)):round(max(volcano.input$log2FoldChange)) )) +
+  ylim(0,16) +
+  xlim(-3.5,3.5) +
+  theme(plot.title = element_text(size=40)) +
+  theme(axis.text=element_text(size=30, color="black"), axis.title=element_text(size=30, color="black")) +
+  theme(axis.line = element_line(colour = "black", size=1))
+dev.off()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
